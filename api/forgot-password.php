@@ -36,11 +36,7 @@ if ($user) {
         'INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, ?)'
     )->execute([$token, (int) $user['id'], $expires]);
 
-    // Build reset link
-    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    $path = dirname(dirname($_SERVER['SCRIPT_NAME']));
-    $resetUrl = $protocol . '://' . $host . rtrim($path, '/') . '/?reset=' . $token;
+    $resetUrl = CANONICAL_ORIGIN . '/?reset=' . $token;
 
     // Send email via SMTP
     $mail = new PHPMailer(true);

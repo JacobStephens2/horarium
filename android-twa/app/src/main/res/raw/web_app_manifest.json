@@ -1,1 +1,30 @@
-{}
+{
+  "id": "/",
+  "name": "Horarium — Rule of Life Tracker",
+  "short_name": "Horarium",
+  "description": "Track prayer, fasting, almsgiving, and discipline — every day, all year.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F5F0EB",
+  "theme_color": "#2D1B4E",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://horarium.us/favicon_io/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://horarium.us/favicon_io/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "https://horarium.us/favicon_io/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
