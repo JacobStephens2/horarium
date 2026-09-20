@@ -145,10 +145,12 @@
       else localStorage.setItem(PREF_TIME, timeInput.value);
     });
 
-    // On startup, re-assert the schedule if enabled (handles app upgrades).
+    // OS alarms outlive WebView origin; clear them when the toggle is off.
     if (toggle.checked) {
       scheduleDaily(timeInput.value).catch(function () { /* ignore */ });
       note.textContent = 'Scheduled for ' + timeInput.value + ' every day.';
+    } else {
+      cancelAll().catch(function () { /* ignore */ });
     }
   }
 

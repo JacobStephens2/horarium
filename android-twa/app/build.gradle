@@ -54,8 +54,8 @@ android {
         def launchUrl = "https://" + twaManifest.hostName + twaManifest.launchUrl
         resValue "string", "launchUrl", launchUrl
 
-        resValue "string", "webManifestUrl", 'https://horarium.us/manifest.json'
-        resValue "string", "fullScopeUrl", 'https://horarium.us/'
+        resValue "string", "webManifestUrl", "https://" + twaManifest.hostName + "/manifest.json"
+        resValue "string", "fullScopeUrl", "https://" + twaManifest.hostName + "/"
 
         resValue "string", "hostName", twaManifest.hostName
         resValue "color", "colorPrimary", twaManifest.themeColor

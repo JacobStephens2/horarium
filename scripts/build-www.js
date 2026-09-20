@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-// Build the www/ directory that Capacitor bundles into the APK.
-// Copies the web assets and rewrites the relative API_BASE to an absolute URL
-// so fetch() calls work under capacitor://localhost.
+// Build the www/ directory Capacitor syncs. Rewrite API_BASE so fetch()
+// works when the WebView origin is not horarium.us.
 
 const fs = require('fs');
 const path = require('path');
@@ -57,24 +56,13 @@ if (appJs === before) {
 }
 fs.writeFileSync(appJsPath, appJs);
 
-// Inject capacitor-native.js at the end of index.html (before </body>)
-const htmlPath = path.join(OUT, 'index.html');
-let html = fs.readFileSync(htmlPath, 'utf8');
-const injectTag = '<script src="capacitor-native.js"></script>';
-if (!html.includes(injectTag)) {
-  html = html.replace('</body>', `  ${injectTag}\n</body>`);
-  fs.writeFileSync(htmlPath, html);
-}
-
-// Copy the native integration script
+fs.mkdirSync(path.join(OUT, 'scripts'), { recursive: true });
 fs.copyFileSync(
   path.join(ROOT, 'scripts', 'capacitor-native.js'),
-  path.join(OUT, 'capacitor-native.js')
+  path.join(OUT, 'scripts', 'capacitor-native.js')
 );
 
-// Service worker: remove (Capacitor serves from capacitor://localhost; SW adds no value
-// and the cache-first strategy can interfere with updates delivered via app upgrades).
-// We just skip copying sw.js. Also strip the registration call from the bundled app.js.
+// Live origin registers its own SW; don't ship one in the bundled copy.
 let appJs2 = fs.readFileSync(appJsPath, 'utf8');
 appJs2 = appJs2.replace(
   /if \('serviceWorker' in navigator\) \{[\s\S]*?\n  \}/,

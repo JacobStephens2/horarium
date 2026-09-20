@@ -1,6 +1,11 @@
 <?php
 require __DIR__ . '/private/secrets.php';
 
+// Emails must not trust HTTP_HOST (www, internal names, host-header spoofing).
+if (!defined('CANONICAL_ORIGIN')) {
+    define('CANONICAL_ORIGIN', 'https://horarium.us');
+}
+
 function getDB() {
     static $pdo;
     if (!$pdo) {

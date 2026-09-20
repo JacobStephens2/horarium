@@ -3,6 +3,8 @@
 </Files>
 
 RewriteEngine On
+RewriteCond %{HTTP_HOST} ^www\.horarium\.us$ [NC]
+RewriteRule ^ https://horarium.us%{REQUEST_URI} [R=301,L]
 RewriteRule ^vendor/ - [F,L]
 RewriteRule ^composer\.(json|lock)$ - [F,L]
 RewriteCond %{HTTP:Authorization} .
