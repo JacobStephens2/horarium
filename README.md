@@ -11,7 +11,7 @@ A Progressive Web App for a small men’s group at St. Agatha St. James parish (
 - **Daily checklist** across six categories: Prayer, Fasting, Almsgiving & Works of Charity, Fraternity, Stewardship, and Asceticism
 - **Progress tracking** with a visual progress bar and day counter
 - **Daily notes** with auto-save
-- **Date navigation** through the current season with a “Go to Today” shortcut
+- **Date navigation** across the liturgical year, with Seasons computed for any date, and a “Go to Today” shortcut
 - **Weekly item tracking** (e.g., 2/3 exercise sessions completed this week)
 - **Offline support** via Service Worker with cache-first strategy
 - **Optional user accounts** for syncing data across multiple devices
@@ -30,12 +30,15 @@ A Progressive Web App for a small men’s group at St. Agatha St. James parish (
 ```
 /                        Root (single-page app)
 ├── index.html           App entry point
+├── calendar.js          Liturgical calendar (Seasons, Fast/Abstinence days)
 ├── app.js               Application logic
 ├── style.css            Styling (CSS custom properties, mobile-first)
 ├── sw.js                Service Worker
 ├── manifest.json        PWA manifest
 ├── HORARIUM-NAME.md     Naming decision record
+├── CONTEXT.md           Domain glossary
 ├── .htaccess            Apache rewrites & SW cache control
+├── test/                Liturgical calendar tests (npm test)
 ├── api/                 PHP API endpoints
 │   ├── config.php       DB connection, CORS, auth helpers
 │   ├── login.php        Authentication
@@ -58,6 +61,8 @@ Checklist data is stored in `localStorage` for offline use. Users who create an 
 1. Serve the project root with Apache (HTTPS recommended). Canonical host: `horarium.us`.
 2. Copy `api/private/secrets.example.php` to `api/private/secrets.php` and fill in your MySQL credentials.
 3. Run the SQL scripts in `api/private/` to create the database tables.
+
+Run the Liturgical calendar tests with `npm test` (Node's built-in `node --test`, no dependencies).
 4. Visit the app in a browser and optionally install it to your home screen.
 
 ## Non-affiliation

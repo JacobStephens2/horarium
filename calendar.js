@@ -22,7 +22,7 @@
     return new Date(n * DAY_MS).getUTCDay();
   }
 
-  function ymd(year, month, day) {
+  function daysFrom(year, month, day) {
     return Date.UTC(year, month - 1, day) / DAY_MS;
   }
 
@@ -56,51 +56,54 @@
     var m = Math.floor((a + 11 * h + 22 * l) / 451);
     var month = Math.floor((h + l - 7 * m + 114) / 31);
     var day = ((h + l - 7 * m + 114) % 31) + 1;
-    return ymd(year, month, day);
+    return daysFrom(year, month, day);
   }
 
   // US: Epiphany is the Sunday from Jan 2 to 8. Baptism of the Lord is the
   // following Sunday, or the Monday after Epiphany when Epiphany is Jan 7 or 8.
   function baptism(year) {
-    var jan8 = ymd(year, 1, 8);
+    var jan8 = daysFrom(year, 1, 8);
     var epiphany = jan8 - weekday(jan8);
-    return epiphany >= ymd(year, 1, 7) ? epiphany + 1 : epiphany + 7;
+    return epiphany >= daysFrom(year, 1, 7) ? epiphany + 1 : epiphany + 7;
   }
 
   // First Sunday of Advent: the fourth Sunday before Christmas (Nov 27 to Dec 3).
   function adventStart(year) {
-    var dec3 = ymd(year, 12, 3);
+    var dec3 = daysFrom(year, 12, 3);
     return dec3 - weekday(dec3);
   }
 
-  // The Seasons from Christmas of year - 1 through Christmas Eve of year,
-  // as [id, name, startDay] in order; each ends the day before the next starts.
+  function ashWednesday(year) {
+    return easter(year) - 46;
+  }
+
+  // The Seasons from Christmas of year - 1 through Christmas Eve of year, in
+  // order; each ends the day before the next starts, and the last ends Dec 24.
   function liturgicalYear(year) {
     var e = easter(year);
     return [
-      ['christmas', 'Christmas', ymd(year - 1, 12, 25)],
-      ['ordinary', 'Ordinary Time', baptism(year) + 1],
-      ['lent', 'Lent', e - 46],
-      ['triduum', 'Triduum', e - 3],
-      ['easter', 'Easter', e],
-      ['ordinary', 'Ordinary Time', e + 50],
-      ['advent', 'Advent', adventStart(year)],
-      [null, null, ymd(year, 12, 25)]
+      { id: 'christmas', name: 'Christmas', start: daysFrom(year - 1, 12, 25) },
+      { id: 'ordinary', name: 'Ordinary Time', start: baptism(year) + 1 },
+      { id: 'lent', name: 'Lent', start: ashWednesday(year) },
+      { id: 'triduum', name: 'Triduum', start: e - 3 },
+      { id: 'easter', name: 'Easter', start: e },
+      { id: 'ordinary', name: 'Ordinary Time', start: e + 50 },
+      { id: 'advent', name: 'Advent', start: adventStart(year) }
     ];
   }
 
   function season(str) {
     var n = toDays(str);
     var year = +str.slice(0, 4);
-    if (n >= ymd(year, 12, 25)) year++;
+    if (n >= daysFrom(year, 12, 25)) year++;
     var seasons = liturgicalYear(year);
     var i = 0;
-    while (n >= seasons[i + 1][2]) i++;
-    var start = seasons[i][2];
-    var end = seasons[i + 1][2] - 1;
+    while (i + 1 < seasons.length && n >= seasons[i + 1].start) i++;
+    var start = seasons[i].start;
+    var end = i + 1 < seasons.length ? seasons[i + 1].start - 1 : daysFrom(year, 12, 24);
     return {
-      id: seasons[i][0],
-      name: seasons[i][1],
+      id: seasons[i].id,
+      name: seasons[i].name,
       start: fromDays(start),
       end: fromDays(end),
       day: n - start + 1,
@@ -110,14 +113,9 @@
 
   // ========== FAST AND ABSTINENCE ==========
 
-  function isPenitential(str) {
+  function isLentOrTriduum(str) {
     var id = season(str).id;
     return id === 'lent' || id === 'triduum';
-  }
-
-  // Ash Wednesday (E - 46) of the liturgical year containing str.
-  function ashWednesday(str) {
-    return easter(+str.slice(0, 4)) - 46;
   }
 
   function applies(freq, str) {
@@ -126,12 +124,13 @@
       case 'sunday':
         return weekday(n) === 0;
       case 'fasting':
-        if (!isPenitential(str)) return false;
-        if (n === ashWednesday(str)) return true;
-        return weekday(n) === 5 && n !== ashWednesday(str) + 2;
       case 'abstinence':
-        if (!isPenitential(str)) return false;
-        return n === ashWednesday(str) || weekday(n) === 5;
+        if (!isLentOrTriduum(str)) return false;
+        // Lent never crosses a year boundary, so its year is the date's year.
+        var ash = ashWednesday(+str.slice(0, 4));
+        if (n === ash) return true;
+        if (weekday(n) !== 5) return false;
+        return freq === 'abstinence' || n !== ash + 2;
       default:
         return true;
     }
