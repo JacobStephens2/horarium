@@ -31,20 +31,7 @@
     }
   })();
 
-  // Liturgical seasons – contiguous, no gaps
-  var SEASONS = [
-    { id: 'advent',    name: 'Advent',        start: '2025-11-30', end: '2025-12-24' },
-    { id: 'christmas', name: 'Christmas',     start: '2025-12-25', end: '2026-01-11' },
-    { id: 'ordinary',  name: 'Ordinary Time', start: '2026-01-12', end: '2026-02-17' },
-    { id: 'lent',      name: 'Lent',          start: '2026-02-18', end: '2026-04-01' },
-    { id: 'triduum',   name: 'Triduum',       start: '2026-04-02', end: '2026-04-04' },
-    { id: 'easter',    name: 'Easter',        start: '2026-04-05', end: '2026-05-24' },
-    { id: 'ordinary',  name: 'Ordinary Time', start: '2026-05-25', end: '2026-11-28' },
-    { id: 'advent',    name: 'Advent',        start: '2026-11-29', end: '2026-12-24' },
-    { id: 'christmas', name: 'Christmas',     start: '2026-12-25', end: '2027-01-10' }
-  ];
-  var FIRST_DATE = SEASONS[0].start;
-  var LAST_DATE = SEASONS[SEASONS.length - 1].end;
+  var Cal = window.HorariumCalendar;
 
   var CATEGORIES = [
     {
@@ -127,12 +114,6 @@
     return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
   }
 
-  function toDateStr(d) {
-    return d.getFullYear() + '-' +
-      String(d.getMonth() + 1).padStart(2, '0') + '-' +
-      String(d.getDate()).padStart(2, '0');
-  }
-
   function parseDate(str) {
     var parts = str.split('-');
     return new Date(+parts[0], +parts[1] - 1, +parts[2], 12, 0, 0);
@@ -144,56 +125,9 @@
     });
   }
 
-  function addDays(str, n) {
-    var d = parseDate(str);
-    d.setDate(d.getDate() + n);
-    return toDateStr(d);
-  }
-
-  function dayOfWeek(str) {
-    return parseDate(str).getDay();
-  }
-
   function readingsUrl(dateStr) {
     var p = dateStr.split('-');
     return 'https://bible.usccb.org/bible/readings/' + p[1] + p[2] + p[0].slice(2) + '.cfm';
-  }
-
-  function currentSeason(dateStr) {
-    for (var i = 0; i < SEASONS.length; i++) {
-      if (dateStr >= SEASONS[i].start && dateStr <= SEASONS[i].end) return SEASONS[i];
-    }
-    return null;
-  }
-
-  function isLentOrTriduum(dateStr) {
-    var s = currentSeason(dateStr);
-    return s && (s.id === 'lent' || s.id === 'triduum');
-  }
-
-  function seasonDayNumber(dateStr) {
-    var s = currentSeason(dateStr);
-    if (!s) return 0;
-    return Math.round((parseDate(dateStr) - parseDate(s.start)) / 864e5) + 1;
-  }
-
-  function totalSeasonDays(dateStr) {
-    var s = currentSeason(dateStr);
-    if (!s) return 0;
-    return Math.round((parseDate(s.end) - parseDate(s.start)) / 864e5) + 1;
-  }
-
-  function getWeekDates(str) {
-    var d = parseDate(str);
-    var dow = d.getDay();
-    d.setDate(d.getDate() - dow);
-    var dates = [];
-    for (var i = 0; i < 7; i++) {
-      var ds = toDateStr(d);
-      if (ds >= FIRST_DATE && ds <= LAST_DATE) dates.push(ds);
-      d.setDate(d.getDate() + 1);
-    }
-    return dates;
   }
 
   // ========== PREFERENCES ==========
@@ -235,31 +169,8 @@
 
   // ========== ITEM VISIBILITY ==========
 
-  function freqApplies(item, dateStr) {
-    switch (item.freq) {
-      case 'daily':
-        return true;
-      case 'sunday':
-        return dayOfWeek(dateStr) === 0;
-      case 'weekly':
-        return true;
-      case 'fasting':
-        if (!isLentOrTriduum(dateStr)) return false;
-        if (dateStr === '2026-02-18') return true;
-        if (dayOfWeek(dateStr) !== 5) return false;
-        if (dateStr === '2026-02-20') return false;
-        return true;
-      case 'abstinence':
-        if (!isLentOrTriduum(dateStr)) return false;
-        if (dateStr === '2026-02-18') return true;
-        return dayOfWeek(dateStr) === 5;
-      default:
-        return true;
-    }
-  }
-
   function shouldShow(item, dateStr) {
-    return isItemEnabled(item.id, item) && freqApplies(item, dateStr);
+    return isItemEnabled(item.id, item) && Cal.applies(item.freq, dateStr);
   }
 
   // ========== AUTH ==========
@@ -328,7 +239,7 @@
   }
 
   function weeklyCount(itemId, dateStr) {
-    var dates = getWeekDates(dateStr);
+    var dates = Cal.weekOf(dateStr);
     var data = loadData();
     var count = 0;
     for (var i = 0; i < dates.length; i++) {
@@ -515,23 +426,17 @@
     var dayEl = document.getElementById('lent-day');
     var todayBtn = document.getElementById('today-btn');
     var prevBtn = document.getElementById('prev-day');
-    var nextBtn = document.getElementById('next-day');
 
     var isToday = (currentDate === todayStr());
 
     dateEl.textContent = formatDate(currentDate);
-    var season = currentSeason(currentDate);
-    if (season) {
-      dayEl.textContent = season.name + ' \u2013 Day ' + seasonDayNumber(currentDate) + ' of ' + totalSeasonDays(currentDate);
-    } else {
-      dayEl.textContent = '';
-    }
+    var season = Cal.season(currentDate);
+    dayEl.textContent = season.name + ' \u2013 Day ' + season.day + ' of ' + season.length;
 
     var todayIndicator = document.getElementById('today-indicator');
     todayIndicator.hidden = !isToday;
     todayBtn.hidden = isToday;
-    prevBtn.disabled = (currentDate <= FIRST_DATE);
-    nextBtn.disabled = (currentDate >= LAST_DATE);
+    prevBtn.disabled = (currentDate <= Cal.EPOCH);
 
     main.innerHTML = '';
     var totalItems = 0;
@@ -1303,7 +1208,7 @@
       for (var j = 0; j < cat.items.length; j++) {
         var item = cat.items[j];
         if (!isItemEnabledFor(prefs, item)) continue;
-        if (!freqApplies(item, dateStr)) continue;
+        if (!Cal.applies(item.freq, dateStr)) continue;
         visible.push(item);
       }
       if (visible.length === 0) continue;
@@ -1474,21 +1379,19 @@
   // ========== EVENT HANDLERS ==========
 
   document.getElementById('prev-day').addEventListener('click', function () {
-    if (currentDate > FIRST_DATE) {
-      currentDate = addDays(currentDate, -1);
+    if (currentDate > Cal.EPOCH) {
+      currentDate = Cal.addDays(currentDate, -1);
       render();
     }
   });
 
   document.getElementById('next-day').addEventListener('click', function () {
-    if (currentDate < LAST_DATE) {
-      currentDate = addDays(currentDate, 1);
-      render();
-    }
+    currentDate = Cal.addDays(currentDate, 1);
+    render();
   });
 
   document.getElementById('today-btn').addEventListener('click', function () {
-    currentDate = clampToSeason(todayStr());
+    currentDate = clampToEpoch(todayStr());
     render();
   });
 
@@ -1503,13 +1406,11 @@
 
   // ========== INIT ==========
 
-  function clampToSeason(dateStr) {
-    if (dateStr < FIRST_DATE) return FIRST_DATE;
-    if (dateStr > LAST_DATE) return LAST_DATE;
-    return dateStr;
+  function clampToEpoch(dateStr) {
+    return dateStr < Cal.EPOCH ? Cal.EPOCH : dateStr;
   }
 
-  currentDate = clampToSeason(todayStr());
+  currentDate = clampToEpoch(todayStr());
   render();
   renderSettingsUI();
   renderAccountUI();
