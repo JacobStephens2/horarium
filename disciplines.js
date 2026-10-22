@@ -85,9 +85,7 @@
     if (value === null || typeof value !== 'object') return false;
     if (Object.prototype.toString.call(value) !== '[object Object]') return false;
     var proto = Object.getPrototypeOf(value);
-    if (proto === null || proto === Object.prototype) return true;
-    // A plain object from another realm has that realm's Object.prototype.
-    return Object.getPrototypeOf(proto) === null;
+    return proto === null || proto === Object.prototype;
   }
 
   function asMap(value) {
@@ -161,13 +159,13 @@
         var entry = cat.items[j];
         if (!enabled(prefs, entry)) continue;
         if (!Cal.applies(entry.freq, date)) continue;
-        var on = marked(checks, date, entry.id);
-        if (on) checked++;
+        var mark = marked(checks, date, entry.id);
+        if (mark) checked++;
         total++;
         items.push({
           id: entry.id,
           label: entry.label,
-          checked: on,
+          checked: mark,
           hint: hint(entry),
           details: copyDetails(entry.details),
           weekly: weeklyLine(entry, checks, date)

@@ -247,6 +247,14 @@ test('a date bucket that is not a plain object counts as no marks', function () 
   assert.equal(day.checked, 0);
 });
 
+test('a bucket whose prototype is not Object.prototype counts as no marks', function () {
+  var bucket = Object.create(Object.create(null));
+  bucket['prayer-readings'] = true;
+  var day = Disciplines.forDate('2026-01-15', null, { '2026-01-15': bucket });
+  assert.equal(item(day, 'prayer-readings').checked, false);
+  assert.equal(day.checked, 0);
+});
+
 test('a truthy mark counts, and a hidden discipline does not', function () {
   var day = Disciplines.forDate('2026-01-15', null, {
     '2026-01-15': {
