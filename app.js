@@ -202,10 +202,14 @@
     deviceRows.write(getUsername(), { disciplineSettingsUpdatedAt: updatedAt || 0 });
   }
 
-  function savePrefs(prefs, updatedAt) {
+  function savePrefsFor(account, prefs, updatedAt) {
     var patch = { disciplineSettings: prefs };
     if (typeof updatedAt === 'number') patch.disciplineSettingsUpdatedAt = updatedAt;
-    deviceRows.write(getUsername(), patch);
+    deviceRows.write(account, patch);
+  }
+
+  function savePrefs(prefs, updatedAt) {
+    savePrefsFor(getUsername(), prefs, updatedAt);
   }
 
   function setPrefsAndSync(prefs) {
@@ -316,11 +320,15 @@
     });
   }
 
-  function touchTimestamp(dateStr) {
-    var ts = loadTimestamps();
+  function touchTimestampFor(account, dateStr) {
+    var ts = deviceRows.read(account).timestamps;
     ts[dateStr] = Date.now();
-    saveTimestamps(ts);
+    deviceRows.write(account, { timestamps: ts });
     return ts[dateStr];
+  }
+
+  function touchTimestamp(dateStr) {
+    return touchTimestampFor(getUsername(), dateStr);
   }
 
   function isChecked(dateStr, itemId) {
@@ -391,10 +399,8 @@
       delete notes[dateStr];
     }
     deviceRows.write(account, { notes: notes });
-    var ts = deviceRows.read(account).timestamps;
-    ts[dateStr] = Date.now();
-    deviceRows.write(account, { timestamps: ts });
-    if (getUsername() === account) syncDateToServer(dateStr, ts[dateStr]);
+    var updatedAt = touchTimestampFor(account, dateStr);
+    if (getUsername() === account) syncDateToServer(dateStr, updatedAt);
   }
 
   // ========== SERVER SYNC ==========
@@ -463,19 +469,13 @@
         var serverUpdated = typeof result.updated_at === 'number' ? result.updated_at : 0;
         var serverPrefs = (result.prefs && typeof result.prefs === 'object') ? result.prefs : {};
 
-        function saveAccountPrefs(prefs, updatedAt) {
-          var patch = { disciplineSettings: prefs };
-          if (typeof updatedAt === 'number') patch.disciplineSettingsUpdatedAt = updatedAt;
-          deviceRows.write(account, patch);
-        }
-
         if (!localUpdated && Object.keys(localPrefs).length > 0 && !serverUpdated) {
           localUpdated = Date.now();
-          saveAccountPrefs(localPrefs, localUpdated);
+          savePrefsFor(account, localPrefs, localUpdated);
         }
 
         if (serverUpdated > localUpdated) {
-          saveAccountPrefs(serverPrefs, serverUpdated);
+          savePrefsFor(account, serverPrefs, serverUpdated);
           if (getUsername() === account) {
             render();
             renderSettingsUI();
@@ -893,10 +893,7 @@
           var prefsUpdatedAt = unbound.disciplineSettingsUpdatedAt;
           if (Object.keys(prefs).length > 0 && !prefsUpdatedAt) {
             prefsUpdatedAt = Date.now();
-            deviceRows.write(null, {
-              disciplineSettings: prefs,
-              disciplineSettingsUpdatedAt: prefsUpdatedAt
-            });
+            savePrefsFor(null, prefs, prefsUpdatedAt);
           }
           body.checklist = unbound.checklist;
           body.notes = unbound.notes;
