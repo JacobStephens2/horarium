@@ -1,25 +1,17 @@
 (function () {
   'use strict';
 
-  var STORAGE_KEY = 'horarium-data';
-  var NOTES_KEY = 'horarium-notes';
-  var TIMESTAMPS_KEY = 'horarium-timestamps';
   var TOKEN_KEY = 'horarium-token';
   var USERNAME_KEY = 'horarium-username';
-  var PREFS_KEY = 'horarium-prefs';
-  var PREFS_UPDATED_KEY = 'horarium-prefs-updated-at';
   var API_BASE = './api';
+  var deviceRows = HorariumDeviceRows.createDeviceRows(localStorage);
 
-  // One-time migration from pre-rename (Exodus 40 Lite) localStorage keys
-  (function migrateStorageKeys() {
+  // Session keys only. Checklist rows, notes, timestamps, and discipline
+  // settings move in device-rows.js, including the pre-rename copies.
+  (function migrateSessionKeys() {
     var legacy = [
-      ['exodus40lite-data', STORAGE_KEY],
-      ['exodus40lite-notes', NOTES_KEY],
-      ['exodus40lite-timestamps', TIMESTAMPS_KEY],
       ['exodus40lite-token', TOKEN_KEY],
-      ['exodus40lite-username', USERNAME_KEY],
-      ['exodus40lite-prefs', PREFS_KEY],
-      ['exodus40lite-prefs-updated-at', PREFS_UPDATED_KEY]
+      ['exodus40lite-username', USERNAME_KEY]
     ];
     for (var i = 0; i < legacy.length; i++) {
       var oldKey = legacy[i][0];
@@ -198,24 +190,26 @@
 
   // ========== PREFERENCES ==========
 
+  function activeAccount() {
+    return getUsername();
+  }
+
   function loadPrefs() {
-    try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; }
-    catch (e) { return {}; }
+    return deviceRows.read(activeAccount()).disciplineSettings;
   }
 
   function loadPrefsUpdatedAt() {
-    return parseInt(localStorage.getItem(PREFS_UPDATED_KEY) || '0', 10) || 0;
+    return deviceRows.read(activeAccount()).disciplineSettingsUpdatedAt;
   }
 
   function savePrefsUpdatedAt(updatedAt) {
-    localStorage.setItem(PREFS_UPDATED_KEY, String(updatedAt || 0));
+    deviceRows.write(activeAccount(), { disciplineSettingsUpdatedAt: updatedAt || 0 });
   }
 
   function savePrefs(prefs, updatedAt) {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
-    if (typeof updatedAt === 'number') {
-      savePrefsUpdatedAt(updatedAt);
-    }
+    var patch = { disciplineSettings: prefs };
+    if (typeof updatedAt === 'number') patch.disciplineSettingsUpdatedAt = updatedAt;
+    deviceRows.write(activeAccount(), patch);
   }
 
   function setPrefsAndSync(prefs) {
@@ -278,29 +272,41 @@
     localStorage.removeItem(USERNAME_KEY);
   }
 
+  function showActiveRows() {
+    render();
+    renderSettingsUI();
+    renderAccountUI();
+    renderAnchorsUI();
+  }
+
+  // Rows already on the device belong to the signed-in account, if there is
+  // one. Later calls leave each owner's rows where the first run put them.
+  deviceRows.assignExistingRows(getUsername());
+
   // ========== LOCALSTORAGE ==========
 
   function loadData() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
-    catch (e) { return {}; }
+    return deviceRows.read(activeAccount()).checklist;
   }
 
   function saveData(data) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    deviceRows.write(activeAccount(), { checklist: data });
   }
 
   function loadNotes() {
-    try { return JSON.parse(localStorage.getItem(NOTES_KEY)) || {}; }
-    catch (e) { return {}; }
+    return deviceRows.read(activeAccount()).notes;
+  }
+
+  function saveNotes(notes) {
+    deviceRows.write(activeAccount(), { notes: notes });
   }
 
   function loadTimestamps() {
-    try { return JSON.parse(localStorage.getItem(TIMESTAMPS_KEY)) || {}; }
-    catch (e) { return {}; }
+    return deviceRows.read(activeAccount()).timestamps;
   }
 
   function saveTimestamps(ts) {
-    localStorage.setItem(TIMESTAMPS_KEY, JSON.stringify(ts));
+    deviceRows.write(activeAccount(), { timestamps: ts });
   }
 
   function touchTimestamp(dateStr) {
@@ -348,7 +354,7 @@
     } else {
       delete notes[dateStr];
     }
-    localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+    saveNotes(notes);
     var updatedAt = touchTimestamp(dateStr);
     syncDateToServer(dateStr, updatedAt);
   }
@@ -368,7 +374,7 @@
       .then(function (r) {
         if (r.status === 401) {
           clearAuth();
-          renderAccountUI();
+          showActiveRows();
           return null;
         }
         return r.json();
@@ -473,7 +479,7 @@
         }
 
         saveData(localData);
-        localStorage.setItem(NOTES_KEY, JSON.stringify(localNotes));
+        saveNotes(localNotes);
         saveTimestamps(localTs);
 
         for (var p = 0; p < pushDates.length; p++) {
@@ -741,8 +747,7 @@
       signOutBtn.addEventListener('click', function () {
         apiRequest('logout.php', { method: 'POST' });
         clearAuth();
-        renderAccountUI();
-        renderAnchorsUI();
+        showActiveRows();
       });
       container.appendChild(info);
       container.appendChild(signOutBtn);
@@ -852,6 +857,16 @@
           setAuth(result.token, result.username);
 
           if (isRegister) {
+            // The account was just created from the unbound rows. Keep a
+            // copy on that account so sign-in shows them even before sync.
+            var carried = deviceRows.read(null);
+            deviceRows.write(result.username, {
+              checklist: carried.checklist,
+              notes: carried.notes,
+              timestamps: carried.timestamps,
+              disciplineSettings: carried.disciplineSettings,
+              disciplineSettingsUpdatedAt: carried.disciplineSettingsUpdatedAt
+            });
             var ts = loadTimestamps();
             var now = Date.now();
             var data = loadData();
@@ -867,10 +882,9 @@
             }
           }
 
+          showActiveRows();
           syncFromServer().then(function () {
-            render();
-            renderAccountUI();
-            renderAnchorsUI();
+            showActiveRows();
           });
         })
         .catch(function () {
