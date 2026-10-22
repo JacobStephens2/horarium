@@ -2,17 +2,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { createDeviceRows } = require('./device-rows');
 const { memoryStorage } = require('./memory-storage');
-const { todayStr, loadPage, button, checklistBox, fireChange, noteValue, alcoholEnabled, flush } = require('./page-harness');
-
-function disciplineBox(document, labelText) {
-  const label = document.walk().find(function (el) {
-    return el.className === 'settings-item-label' && el.textContent === labelText;
-  });
-  if (!label || !label.parentNode) throw new Error('missing discipline setting ' + labelText);
-  const input = label.parentNode.children.find(function (el) { return el.tagName === 'INPUT'; });
-  if (!input) throw new Error('missing discipline checkbox ' + labelText);
-  return input;
-}
+const { todayStr, loadPage, button, checklistBox, fireChange, noteValue, disciplineBox, alcoholEnabled, flush } = require('./page-harness');
 
 function typeNote(field, value) {
   field.value = value;

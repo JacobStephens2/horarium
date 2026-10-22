@@ -261,6 +261,7 @@
   function getToken() { return localStorage.getItem(TOKEN_KEY); }
   function getUsername() { return localStorage.getItem(USERNAME_KEY); }
   function isLoggedIn() { return !!getToken(); }
+  function accountIsSession(account) { return getUsername() === account; }
 
   function setAuth(token, username) {
     localStorage.setItem(TOKEN_KEY, token);
@@ -372,11 +373,15 @@
   var pendingNote = null;
   var pendingNoteTimer = null;
 
-  function flushPendingNote() {
+  function clearPendingNoteTimer() {
     if (pendingNoteTimer) {
       clearTimeout(pendingNoteTimer);
       pendingNoteTimer = null;
     }
+  }
+
+  function flushPendingNote() {
+    clearPendingNoteTimer();
     if (!pendingNote) return;
     var pending = pendingNote;
     pendingNote = null;
@@ -386,16 +391,13 @@
   // Discard the debounced note without writing it. flushPendingNote is the
   // path that still saves, including after a same-document sign-out.
   function dropPendingNote() {
-    if (pendingNoteTimer) {
-      clearTimeout(pendingNoteTimer);
-      pendingNoteTimer = null;
-    }
+    clearPendingNoteTimer();
     pendingNote = null;
   }
 
   function queueNoteSave(owner, dateStr, text) {
     pendingNote = { owner: owner, dateStr: dateStr, text: text };
-    if (pendingNoteTimer) clearTimeout(pendingNoteTimer);
+    clearPendingNoteTimer();
     pendingNoteTimer = setTimeout(flushPendingNote, 400);
   }
 
@@ -657,7 +659,7 @@
     textarea.value = getNote(currentDate);
     var renderedAccount = getUsername();
     textarea.addEventListener('input', function () {
-      if (getUsername() !== renderedAccount) return;
+      if (!accountIsSession(renderedAccount)) return;
       var owner = renderedAccount;
       var dateStr = currentDate;
       var field = textarea;
@@ -676,7 +678,7 @@
     var cb = el('input', { type: 'checkbox' });
     cb.checked = checked;
     cb.addEventListener('change', function () {
-      if (getUsername() !== renderedAccount) return;
+      if (!accountIsSession(renderedAccount)) return;
       var newState = toggleItem(currentDate, item.id);
       row.classList.toggle('checked', newState);
       recalcProgress();
@@ -1241,7 +1243,7 @@
 
         (function (itemId) {
           toggle.addEventListener('change', function () {
-            if (getUsername() !== renderedAccount) return;
+            if (!accountIsSession(renderedAccount)) return;
             var p = loadPrefs();
             p[itemId] = this.checked;
             setPrefsAndSync(p);

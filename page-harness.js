@@ -308,14 +308,18 @@ function noteValue(document) {
   return notes.value;
 }
 
-function alcoholEnabled(document) {
+function disciplineBox(document, labelText) {
   const label = document.walk().find(function (el) {
-    return el.className === 'settings-item-label' && el.textContent === 'No alcohol';
+    return el.className === 'settings-item-label' && el.textContent === labelText;
   });
-  if (!label || !label.parentNode) throw new Error('alcohol discipline setting is missing');
+  if (!label || !label.parentNode) throw new Error('missing discipline setting ' + labelText);
   const input = label.parentNode.children.find(function (el) { return el.tagName === 'INPUT'; });
-  if (!input) throw new Error('alcohol discipline checkbox is missing');
-  return input.checked;
+  if (!input) throw new Error('missing discipline checkbox ' + labelText);
+  return input;
+}
+
+function alcoholEnabled(document) {
+  return disciplineBox(document, 'No alcohol').checked;
 }
 
 async function flush() {
@@ -332,6 +336,7 @@ module.exports = {
   fireChange,
   signIn,
   noteValue,
+  disciplineBox,
   alcoholEnabled,
   flush
 };
