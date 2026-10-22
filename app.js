@@ -850,14 +850,20 @@
         var body = { username: username, password: password };
 
         if (isRegister) {
-          var prefs = loadPrefs();
-          var prefsUpdatedAt = loadPrefsUpdatedAt();
+          // The signed-out form can still name another account. Create
+          // account sends the unbound rows, and that account's rows stay out.
+          var unbound = deviceRows.read(null);
+          var prefs = unbound.disciplineSettings;
+          var prefsUpdatedAt = unbound.disciplineSettingsUpdatedAt;
           if (Object.keys(prefs).length > 0 && !prefsUpdatedAt) {
             prefsUpdatedAt = Date.now();
-            savePrefs(prefs, prefsUpdatedAt);
+            deviceRows.write(null, {
+              disciplineSettings: prefs,
+              disciplineSettingsUpdatedAt: prefsUpdatedAt
+            });
           }
-          body.checklist = loadData();
-          body.notes = loadNotes();
+          body.checklist = unbound.checklist;
+          body.notes = unbound.notes;
           body.prefs = prefs;
           body.prefs_updated_at = prefsUpdatedAt;
         }

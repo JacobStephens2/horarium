@@ -381,11 +381,15 @@ describe('account rows on the page', function () {
     rows.assignExistingRows(null);
     rows.write(null, {
       checklist: { [today]: { 'prayer-holyhour': true } },
-      notes: { [today]: 'local note' }
+      notes: { [today]: 'local note' },
+      disciplineSettings: { 'asceticism-alcohol': false },
+      disciplineSettingsUpdatedAt: 40
     });
     rows.write('ada@example.com', {
       notes: { [today]: 'private note' },
-      timestamps: { [today]: 1000 }
+      timestamps: { [today]: 1000 },
+      disciplineSettings: { 'asceticism-soda': false },
+      disciplineSettingsUpdatedAt: 90
     });
     storage.setItem('horarium-token', 'token-ada');
     storage.setItem('horarium-username', 'ada@example.com');
@@ -403,11 +407,125 @@ describe('account rows on the page', function () {
     });
     assert.equal(register.body.notes[today], 'local note');
     assert.equal(register.body.checklist[today]['prayer-holyhour'], true);
+    assert.deepEqual(register.body.prefs, { 'asceticism-alcohol': false });
+    assert.equal(register.body.prefs_updated_at, 40);
     assert.equal(JSON.stringify(register.body).indexOf('private note'), -1);
+    assert.equal(JSON.stringify(register.body).indexOf('asceticism-soda'), -1);
     assert.equal(noteValue(document), 'local note');
+    assert.equal(alcoholEnabled(document), false);
     assert.equal(rows.read('ada@example.com').notes[today], 'private note');
+    assert.equal(rows.read('ada@example.com').disciplineSettings['asceticism-soda'], false);
+    assert.equal(rows.read('ada@example.com').disciplineSettingsUpdatedAt, 90);
     assert.equal(rows.read('cy@example.com').notes[today], 'local note');
+    assert.equal(rows.read('cy@example.com').disciplineSettings['asceticism-alcohol'], false);
     assert.equal(rows.read(null).notes[today], 'local note');
+    assert.equal(rows.read(null).disciplineSettings['asceticism-alcohol'], false);
+  });
+
+  it('registers unbound checklist, notes, and discipline settings when another account is still named', async function () {
+    const today = todayStr();
+    const storage = memoryStorage();
+    const rows = createDeviceRows(storage);
+    rows.assignExistingRows(null);
+    rows.write(null, {
+      checklist: { [today]: { 'prayer-holyhour': true } },
+      notes: { [today]: 'local note' },
+      disciplineSettings: { 'asceticism-alcohol': false },
+      disciplineSettingsUpdatedAt: 40
+    });
+    rows.write('ada@example.com', {
+      checklist: { [today]: { 'prayer-readings': true } },
+      notes: { [today]: 'private note' },
+      timestamps: { [today]: 1000 },
+      disciplineSettings: { 'asceticism-soda': false },
+      disciplineSettingsUpdatedAt: 90
+    });
+    storage.setItem('horarium-username', 'ada@example.com');
+
+    const requests = [];
+    const document = loadPage(storage, requests);
+    await flush();
+
+    const mark = requests.length;
+    await signIn(document, 'cy@example.com', 'secret-password', 'Create account');
+
+    const register = requests.slice(mark).find(function (req) {
+      return req.url.indexOf('register.php') !== -1;
+    });
+    assert.deepEqual(register.body.checklist, { [today]: { 'prayer-holyhour': true } });
+    assert.deepEqual(register.body.notes, { [today]: 'local note' });
+    assert.deepEqual(register.body.prefs, { 'asceticism-alcohol': false });
+    assert.equal(register.body.prefs_updated_at, 40);
+    const sent = JSON.stringify(register.body);
+    assert.equal(sent.indexOf('private note'), -1);
+    assert.equal(sent.indexOf('prayer-readings'), -1);
+    assert.equal(sent.indexOf('asceticism-soda'), -1);
+
+    assert.equal(noteValue(document), 'local note');
+    assert.equal(checklistBox(document, 'Make a holy half hour').checked, true);
+    assert.equal(checklistBox(document, 'Read Mass readings').checked, false);
+    assert.equal(alcoholEnabled(document), false);
+
+    assert.deepEqual(rows.read('ada@example.com').checklist, { [today]: { 'prayer-readings': true } });
+    assert.deepEqual(rows.read('ada@example.com').notes, { [today]: 'private note' });
+    assert.equal(rows.read('ada@example.com').timestamps[today], 1000);
+    assert.deepEqual(rows.read('ada@example.com').disciplineSettings, { 'asceticism-soda': false });
+    assert.equal(rows.read('ada@example.com').disciplineSettingsUpdatedAt, 90);
+
+    assert.deepEqual(rows.read('cy@example.com').checklist, { [today]: { 'prayer-holyhour': true } });
+    assert.deepEqual(rows.read('cy@example.com').notes, { [today]: 'local note' });
+    assert.deepEqual(rows.read('cy@example.com').disciplineSettings, { 'asceticism-alcohol': false });
+    assert.equal(rows.read('cy@example.com').disciplineSettingsUpdatedAt, 40);
+    assert.equal(rows.read(null).notes[today], 'local note');
+    assert.equal(rows.read(null).checklist[today]['prayer-holyhour'], true);
+    assert.equal(rows.read(null).disciplineSettings['asceticism-alcohol'], false);
+
+    const leaked = requests.slice(mark).filter(function (req) {
+      const body = JSON.stringify(req.body || {});
+      return body.indexOf('private note') !== -1
+        || body.indexOf('prayer-readings') !== -1
+        || body.indexOf('asceticism-soda') !== -1;
+    });
+    assert.deepEqual(leaked, []);
+  });
+
+  it('stamps unbound discipline settings when creating an account, not the named account', async function () {
+    const today = todayStr();
+    const storage = memoryStorage();
+    const rows = createDeviceRows(storage);
+    rows.assignExistingRows(null);
+    rows.write(null, {
+      notes: { [today]: 'local note' },
+      disciplineSettings: { 'asceticism-alcohol': false },
+      disciplineSettingsUpdatedAt: 0
+    });
+    rows.write('ada@example.com', {
+      notes: { [today]: 'private note' },
+      disciplineSettings: { 'asceticism-soda': false },
+      disciplineSettingsUpdatedAt: 0
+    });
+    storage.setItem('horarium-username', 'ada@example.com');
+
+    const requests = [];
+    const document = loadPage(storage, requests);
+    await flush();
+    const before = Date.now();
+    await signIn(document, 'cy@example.com', 'secret-password', 'Create account');
+
+    const register = requests.find(function (req) {
+      return req.url.indexOf('register.php') !== -1;
+    });
+    const stamped = register.body.prefs_updated_at;
+    assert.equal(typeof stamped, 'number');
+    assert.ok(stamped >= before);
+    assert.deepEqual(register.body.prefs, { 'asceticism-alcohol': false });
+    assert.equal(JSON.stringify(register.body).indexOf('private note'), -1);
+    assert.equal(JSON.stringify(register.body).indexOf('asceticism-soda'), -1);
+    assert.equal(rows.read(null).disciplineSettingsUpdatedAt, stamped);
+    assert.equal(rows.read('cy@example.com').disciplineSettingsUpdatedAt, stamped);
+    assert.equal(rows.read('ada@example.com').disciplineSettingsUpdatedAt, 0);
+    assert.deepEqual(rows.read('ada@example.com').disciplineSettings, { 'asceticism-soda': false });
+    assert.equal(rows.read('ada@example.com').notes[today], 'private note');
   });
 
   it('a rejected session shows unbound rows and keeps the account rows', async function () {
