@@ -155,27 +155,26 @@ function loadPage(storage, requests, routes) {
     pathname: '/',
     reload() { mount(); }
   };
+  // A fresh realm's JSON is not a property the test runner can read off the sandbox.
+  let pageJSON;
+  function responseForPage(response) {
+    return {
+      status: response.status,
+      json() {
+        return Promise.resolve(response.json()).then(function (body) {
+          return pageJSON.parse(pageJSON.stringify(body));
+        });
+      }
+    };
+  }
+  function deliver(result) {
+    return Promise.resolve(result).then(responseForPage);
+  }
   const context = {
     console,
     setTimeout,
     clearTimeout,
     URLSearchParams,
-    Intl,
-    Date,
-    Math,
-    JSON,
-    Object,
-    Array,
-    String,
-    Number,
-    parseInt,
-    parseFloat,
-    encodeURIComponent,
-    decodeURIComponent,
-    Promise,
-    Error,
-    RegExp,
-    isNaN,
     localStorage: storage,
     document,
     navigator: {
@@ -203,24 +202,24 @@ function loadPage(storage, requests, routes) {
       requests.push(request);
       if (routes && routes.before) {
         const custom = routes.before(request);
-        if (custom) return custom;
+        if (custom) return deliver(custom);
       }
       if (String(url).indexOf('login.php') !== -1 || String(url).indexOf('register.php') !== -1) {
-        return Promise.resolve(jsonResponse({
+        return deliver(jsonResponse({
           token: 'token-for-' + (body && body.username),
           username: body && body.username
         }));
       }
       if (String(url).indexOf('data.php') !== -1 && method === 'GET') {
-        return Promise.resolve(jsonResponse({ data: [] }));
+        return deliver(jsonResponse({ data: [] }));
       }
       if (String(url).indexOf('prefs.php') !== -1 && method === 'GET') {
-        return Promise.resolve(jsonResponse({ prefs: {}, updated_at: 0 }));
+        return deliver(jsonResponse({ prefs: {}, updated_at: 0 }));
       }
       if (String(url).indexOf('anchors.php') !== -1) {
-        return Promise.resolve(jsonResponse({ incoming: [], outgoing: [], pairs: [] }));
+        return deliver(jsonResponse({ incoming: [], outgoing: [], pairs: [] }));
       }
-      return Promise.resolve(jsonResponse({ ok: true }));
+      return deliver(jsonResponse({ ok: true }));
     }
   };
   context.window = context;
@@ -253,6 +252,7 @@ function loadPage(storage, requests, routes) {
     vm.runInContext(appSource, context, { filename: 'app.js' });
   }
   vm.createContext(context);
+  pageJSON = vm.runInContext('JSON', context);
   mount();
   return document;
 }

@@ -1109,8 +1109,7 @@
     var prefs = (pair.prefs && typeof pair.prefs === 'object') ? pair.prefs : {};
     var dateStr = pair.today.date_str;
     var anchorItems = (pair.today.items && typeof pair.today.items === 'object') ? pair.today.items : {};
-    // Null prototype: the harness injects Object, so a {} here is not plain to the module.
-    var checks = Object.create(null);
+    var checks = {};
     checks[dateStr] = anchorItems;
     var day = Disciplines.forDate(dateStr, prefs, checks);
     var categoryNodes = [];
