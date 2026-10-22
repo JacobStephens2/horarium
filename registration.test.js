@@ -163,4 +163,118 @@ describe('account creation migration', function () {
     assert.equal(created.results[0].body.token.length, 64);
     assert.deepEqual(created.accounts[0].dates, {});
   });
+
+  it('stores the device clock when it was sent, the server clock when it was missing or not positive, and no row for a timestamp-only date', function () {
+    const before = Date.now();
+    const created = createAccounts([
+      {
+        op: 'create',
+        input: {
+          username: 'flo@example.com',
+          password: 'secret1',
+          checklist: {
+            '2026-06-15': { 'prayer-holyhour': true },
+            '2026-06-17': { 'prayer-readings': true },
+            '2026-06-20': { 'prayer-holyhour': true }
+          },
+          notes: { '2026-06-16': 'kept', '2026-06-19': 'negative' },
+          timestamps: [
+            { date_str: '2026-06-15', updated_at: 3000 },
+            { date_str: '2026-06-16', updated_at: 0 },
+            { date_str: '2026-06-19', updated_at: -5 },
+            { date_str: '2026-06-20', updated_at: '3000' },
+            { date_str: '2026-06-18', updated_at: 4000 }
+          ]
+        }
+      }
+    ]);
+    const after = Date.now();
+
+    assert.equal(created.results[0].code, 200);
+    assert.deepEqual(created.accounts[0].dates['2026-06-15'], {
+      items: { 'prayer-holyhour': true },
+      note: ''
+    });
+    assert.deepEqual(created.accounts[0].dates['2026-06-16'], {
+      items: {},
+      note: 'kept'
+    });
+    assert.equal(created.accounts[0].dates['2026-06-18'], undefined);
+    assert.equal(created.accounts[0].clocks['2026-06-15'], 3000);
+    assert.equal(created.accounts[0].clocks['2026-06-20'], 3000);
+    const serverClock = created.accounts[0].clocks['2026-06-16'];
+    assert.equal(created.accounts[0].clocks['2026-06-17'], serverClock);
+    assert.equal(created.accounts[0].clocks['2026-06-19'], serverClock);
+    assert.ok(serverClock >= before && serverClock <= after);
+    assert.notEqual(serverClock, 0);
+    assert.notEqual(serverClock, 3000);
+    assert.equal(created.accounts[0].clocks['2026-06-18'], undefined);
+  });
+
+  it('stores the server clock for every migrated date when the client sends no per-date clocks', function () {
+    const before = Date.now();
+    const created = createAccounts([
+      {
+        op: 'create',
+        input: {
+          username: 'gio@example.com',
+          password: 'secret1',
+          checklist: { '2026-06-15': { 'prayer-holyhour': true } },
+          notes: { '2026-06-16': 'kept' }
+        }
+      }
+    ]);
+    const after = Date.now();
+
+    assert.equal(created.results[0].code, 200);
+    assert.deepEqual(Object.keys(created.accounts[0].dates), ['2026-06-15', '2026-06-16']);
+    const serverClock = created.accounts[0].clocks['2026-06-15'];
+    assert.equal(created.accounts[0].clocks['2026-06-16'], serverClock);
+    assert.ok(serverClock >= before && serverClock <= after);
+    assert.notEqual(serverClock, 0);
+  });
+
+  it('stores the server clock when timestamps is not an array', function () {
+    const before = Date.now();
+    const created = createAccounts([
+      {
+        op: 'create',
+        input: {
+          username: 'hoa@example.com',
+          password: 'secret1',
+          checklist: { '2026-06-15': { 'prayer-holyhour': true } },
+          notes: {},
+          timestamps: { '2026-06-15': 3000 }
+        }
+      }
+    ]);
+    const after = Date.now();
+
+    assert.equal(created.results[0].code, 200);
+    const serverClock = created.accounts[0].clocks['2026-06-15'];
+    assert.notEqual(serverClock, 3000);
+    assert.ok(serverClock >= before && serverClock <= after);
+  });
+
+  it('does not let timestamp-only dates raise the 407 date limit or create a row', function () {
+    const span = inclusiveDates(SPAN_START, SPAN_END);
+    assert.equal(span.length, 407);
+    const created = createAccounts([
+      {
+        op: 'create',
+        input: {
+          username: 'ida@example.com',
+          password: 'secret1',
+          checklist: checklistFor(span),
+          notes: {},
+          timestamps: [{ date_str: '2027-01-11', updated_at: 3000 }]
+        }
+      }
+    ]);
+
+    assert.equal(created.results[0].code, 200);
+    assert.equal(Object.keys(created.accounts[0].dates).length, 407);
+    assert.equal(created.accounts[0].dates['2027-01-11'], undefined);
+    assert.equal(created.accounts[0].clocks['2027-01-11'], undefined);
+  });
 });

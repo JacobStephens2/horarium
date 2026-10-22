@@ -240,12 +240,14 @@ function loadPage(storage, requests, routes) {
   };
   const deviceRowsSource = fs.readFileSync(require.resolve('./device-rows.js'), 'utf8');
   const calendarSource = fs.readFileSync(require.resolve('./calendar.js'), 'utf8');
+  const accountRowMergeSource = fs.readFileSync(require.resolve('./account-row-merge.js'), 'utf8');
   const appSource = fs.readFileSync(require.resolve('./app.js'), 'utf8');
   function mount() {
     mountShell(document);
     windowListeners = {};
     vm.runInContext(deviceRowsSource, context, { filename: 'device-rows.js' });
     vm.runInContext(calendarSource, context, { filename: 'calendar.js' });
+    vm.runInContext(accountRowMergeSource, context, { filename: 'account-row-merge.js' });
     vm.runInContext(appSource, context, { filename: 'app.js' });
   }
   vm.createContext(context);

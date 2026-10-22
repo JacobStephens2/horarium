@@ -29,3 +29,5 @@ The header shows the Season as "Season - Day N of M".
 - `weekly` - every day, counted toward a weekly goal over the Sunday-to-Saturday week
 - `fasting` - Fast days only
 - `abstinence` - Abstinence days only
+
+**Account rows** - The checklist, the notes, and a timestamp for each date, plus the discipline settings and their timestamp, kept for one account, or unbound when no account owns them.

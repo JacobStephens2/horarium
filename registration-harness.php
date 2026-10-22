@@ -50,15 +50,17 @@ $accounts = [];
 $users = $db->query('SELECT id, username FROM users ORDER BY id');
 foreach ($users->fetchAll(PDO::FETCH_ASSOC) as $user) {
     $rows = $db->prepare(
-        'SELECT date_str, items_json, note FROM user_data WHERE user_id = ? ORDER BY date_str'
+        'SELECT date_str, items_json, note, updated_at FROM user_data WHERE user_id = ? ORDER BY date_str'
     );
     $rows->execute([(int) $user['id']]);
     $dates = new stdClass();
+    $clocks = new stdClass();
     foreach ($rows->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $dates->{$row['date_str']} = [
             'items' => json_decode($row['items_json']),
             'note' => $row['note'],
         ];
+        $clocks->{$row['date_str']} = (int) $row['updated_at'];
     }
     $prefs = $db->prepare('SELECT prefs_json, updated_at FROM user_prefs WHERE user_id = ?');
     $prefs->execute([(int) $user['id']]);
@@ -66,6 +68,7 @@ foreach ($users->fetchAll(PDO::FETCH_ASSOC) as $user) {
     $accounts[] = [
         'username' => $user['username'],
         'dates' => $dates,
+        'clocks' => $clocks,
         'prefs' => $prefsRow ? json_decode($prefsRow['prefs_json'], true) : null,
         'prefs_updated_at' => $prefsRow ? (int) $prefsRow['updated_at'] : null,
     ];

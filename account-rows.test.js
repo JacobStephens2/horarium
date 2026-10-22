@@ -240,13 +240,60 @@ describe('account rows on the page', function () {
     assert.equal(typeof stamped, 'number');
     assert.ok(stamped >= before);
     assert.deepEqual(register.body.prefs, { 'asceticism-alcohol': false });
+    const sentClock = register.body.timestamps.find(function (entry) {
+      return entry.date_str === today;
+    });
+    assert.equal(sentClock.updated_at, stamped);
     assert.equal(JSON.stringify(register.body).indexOf('private note'), -1);
     assert.equal(JSON.stringify(register.body).indexOf('asceticism-soda'), -1);
     assert.equal(rows.read(null).disciplineSettingsUpdatedAt, 0);
     assert.equal(rows.read('cy@example.com').disciplineSettingsUpdatedAt, stamped);
+    assert.equal(rows.read('cy@example.com').timestamps[today], stamped);
     assert.equal(rows.read('ada@example.com').disciplineSettingsUpdatedAt, 0);
     assert.deepEqual(rows.read('ada@example.com').disciplineSettings, { 'asceticism-soda': false });
     assert.equal(rows.read('ada@example.com').notes[today], 'private note');
+  });
+
+  it('leaves the stamped clocks on the unbound rows when create fails', async function () {
+    const today = todayStr();
+    const storage = memoryStorage();
+    const rows = createDeviceRows(storage);
+    rows.assignExistingRows(null);
+    rows.write(null, {
+      notes: { [today]: 'local note' },
+      disciplineSettings: { 'asceticism-alcohol': false },
+      disciplineSettingsUpdatedAt: 0
+    });
+    const requests = [];
+    const document = loadPage(storage, requests, {
+      before(request) {
+        if (request.url.indexOf('register.php') !== -1) {
+          return Promise.resolve(jsonResponse({
+            error: 'An account with this email already exists.'
+          }, 409));
+        }
+      }
+    });
+    await flush();
+    const before = Date.now();
+    await signIn(document, 'cy@example.com', 'secret-password', 'Create account');
+
+    const register = requests.find(function (req) {
+      return req.url.indexOf('register.php') !== -1;
+    });
+    const stamped = register.body.prefs_updated_at;
+    assert.ok(stamped >= before);
+    const sentClock = register.body.timestamps.find(function (entry) {
+      return entry.date_str === today;
+    });
+    assert.equal(sentClock.updated_at, stamped);
+    assert.equal(rows.read(null).notes[today], 'local note');
+    assert.equal(rows.read(null).timestamps[today], stamped);
+    assert.equal(rows.read(null).disciplineSettingsUpdatedAt, stamped);
+    assert.deepEqual(rows.read(null).disciplineSettings, { 'asceticism-alcohol': false });
+    assert.equal(rows.read('cy@example.com').notes[today], undefined);
+    assert.equal(rows.read('cy@example.com').timestamps[today], undefined);
+    assert.equal(rows.read('cy@example.com').disciplineSettingsUpdatedAt, 0);
   });
 
   it('a rejected session shows unbound rows and keeps the account rows', async function () {
