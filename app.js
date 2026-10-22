@@ -24,79 +24,7 @@
   })();
 
   var Cal = window.HorariumCalendar;
-
-  var CATEGORIES = [
-    {
-      id: 'prayer',
-      name: 'Prayer',
-      icon: '\u{1F64F}',
-      items: [
-        { id: 'prayer-readings', label: 'Read Mass readings', freq: 'daily' },
-        { id: 'prayer-holyhour', label: 'Make a holy half hour', freq: 'daily' },
-        { id: 'prayer-lordsday', label: "Celebrate the Lord\u2019s Day by relaxing one discipline", freq: 'sunday' }
-      ]
-    },
-    {
-      id: 'fasting',
-      name: 'Fasting',
-      icon: '\u{1F35E}',
-      items: [
-        { id: 'fasting-fast', label: 'Fast', freq: 'fasting' },
-        { id: 'fasting-abstain', label: 'Abstain from meat', freq: 'abstinence' }
-      ]
-    },
-    {
-      id: 'almsgiving',
-      name: 'Almsgiving & Works of Charity',
-      icon: '\u{1FAF4}',
-      items: [
-        { id: 'almsgiving-alms', label: 'Give alms', freq: 'weekly' },
-        {
-          id: 'charity-work',
-          label: 'Perform one work of charity',
-          freq: 'daily',
-          expandable: true,
-          details: [
-            { heading: 'Corporal', list: 'Feed the hungry, give drink to the thirsty, clothe the naked, shelter the homeless, visit the sick, visit the imprisoned, bury the dead' },
-            { heading: 'Spiritual', list: 'Instruct the ignorant, counsel the doubtful, admonish the sinner, bear wrongs patiently, forgive offenses willingly, comfort the afflicted, pray for the living and the dead' }
-          ]
-        }
-      ]
-    },
-    {
-      id: 'fraternity',
-      name: 'Fraternity',
-      icon: '\u{1FAC2}',
-      items: [
-        { id: 'fraternity-anchor', label: 'Brother check-in', freq: 'daily' },
-        { id: 'fraternity-meeting', label: 'Fraternity meeting with the group', freq: 'sunday' }
-      ]
-    },
-    {
-      id: 'stewardship',
-      name: 'Stewardship',
-      icon: '\u{1F3DB}\uFE0F',
-      items: [
-        { id: 'stewardship-sleep', label: 'Full night\u2019s sleep (7+ hours)', freq: 'daily' },
-        { id: 'stewardship-exercise', label: 'Exercise', freq: 'weekly', weeklyGoal: 3 }
-      ]
-    },
-    {
-      id: 'asceticism',
-      name: 'Asceticism',
-      icon: '\u{1F4AA}',
-      items: [
-        { id: 'asceticism-screentime', label: 'No unnecessary screen time', freq: 'daily' },
-        { id: 'asceticism-alcohol', label: 'No alcohol', freq: 'daily' },
-        { id: 'asceticism-soda', label: 'No soda or sweet drinks', freq: 'daily' },
-        { id: 'asceticism-snacking', label: 'No snacking between meals', freq: 'daily' },
-        { id: 'asceticism-desserts', label: 'No desserts or sweets', freq: 'daily' },
-        { id: 'asceticism-music', label: 'Only music that lifts the soul to God', freq: 'daily' },
-        { id: 'asceticism-purchases', label: 'No unnecessary purchases', freq: 'daily' },
-        { id: 'asceticism-coldshower', label: 'Take a cold shower', freq: 'daily' }
-      ]
-    }
-  ];
+  var Disciplines = window.HorariumDisciplines;
 
   // ========== DATE HELPERS ==========
 
@@ -150,21 +78,6 @@
     var updatedAt = Date.now();
     savePrefs(prefs, updatedAt);
     syncPrefsToServer(updatedAt);
-  }
-
-  function isItemEnabledFor(prefs, item) {
-    if (prefs.hasOwnProperty(item.id)) return prefs[item.id];
-    return !item.optional;
-  }
-
-  function isItemEnabled(itemId, item) {
-    return isItemEnabledFor(loadPrefs(), item);
-  }
-
-  // ========== ITEM VISIBILITY ==========
-
-  function shouldShow(item, dateStr) {
-    return isItemEnabled(item.id, item) && Cal.applies(item.freq, dateStr);
   }
 
   // ========== AUTH ==========
@@ -243,11 +156,6 @@
     return touchTimestampFor(getUsername(), dateStr);
   }
 
-  function isChecked(dateStr, itemId) {
-    var data = loadData();
-    return !!(data[dateStr] && data[dateStr][itemId]);
-  }
-
   function toggleItem(dateStr, itemId) {
     var data = loadData();
     if (!data[dateStr]) data[dateStr] = {};
@@ -258,16 +166,6 @@
     var updatedAt = touchTimestamp(dateStr);
     syncDateToServer(dateStr, updatedAt);
     return !!(data[dateStr] && data[dateStr][itemId]);
-  }
-
-  function weeklyCount(itemId, dateStr) {
-    var dates = Cal.weekOf(dateStr);
-    var data = loadData();
-    var count = 0;
-    for (var i = 0; i < dates.length; i++) {
-      if (data[dates[i]] && data[dates[i]][itemId]) count++;
-    }
-    return count;
   }
 
   function getNote(dateStr) {
@@ -481,41 +379,30 @@
     prevBtn.disabled = (currentDate <= Cal.EPOCH);
 
     main.innerHTML = '';
-    var totalItems = 0;
-    var checkedItems = 0;
+    var day = Disciplines.forDate(currentDate, loadPrefs(), loadData());
 
-    for (var c = 0; c < CATEGORIES.length; c++) {
-      var cat = CATEGORIES[c];
-      var visible = [];
-      for (var j = 0; j < cat.items.length; j++) {
-        if (shouldShow(cat.items[j], currentDate)) visible.push(cat.items[j]);
-      }
-      if (visible.length === 0) continue;
-
+    for (var c = 0; c < day.categories.length; c++) {
+      var cat = day.categories[c];
       var section = el('section', { className: 'category' });
       var hdr = el('div', { className: 'category-header' }, [
         el('span', { className: 'category-icon', textContent: cat.icon }),
         el('div', { className: 'category-heading' }, [
           el('h2', { textContent: cat.name }),
-          el('span', { className: 'category-meta', textContent: visible.length + ' disciplines' })
+          el('span', { className: 'category-meta', textContent: cat.items.length + ' disciplines' })
         ])
       ]);
       section.appendChild(hdr);
 
-      for (var k = 0; k < visible.length; k++) {
-        var item = visible[k];
-        var checked = isChecked(currentDate, item.id);
-        if (checked) checkedItems++;
-        totalItems++;
-        section.appendChild(buildItemRow(item, checked));
+      for (var k = 0; k < cat.items.length; k++) {
+        section.appendChild(buildItemRow(cat.items[k]));
       }
 
       main.appendChild(section);
     }
 
-    updateProgress(checkedItems, totalItems);
+    updateProgress(day.checked, day.total);
 
-    if (totalItems > 0 && checkedItems === totalItems) {
+    if (day.total > 0 && day.checked === day.total) {
       main.appendChild(el('div', { className: 'all-done', textContent: 'All disciplines kept today. Well done.' }));
     }
 
@@ -542,33 +429,31 @@
 
   }
 
-  function buildItemRow(item, checked) {
-    var row = el('label', { className: 'item' + (checked ? ' checked' : '') });
+  function buildItemRow(item) {
+    var row = el('label', { className: 'item' + (item.checked ? ' checked' : '') });
     var renderedAccount = getUsername();
+    var badge = null;
 
     var cb = el('input', { type: 'checkbox' });
-    cb.checked = checked;
+    cb.checked = item.checked;
     cb.addEventListener('change', function () {
       if (!accountIsSession(renderedAccount)) return;
       var newState = toggleItem(currentDate, item.id);
       row.classList.toggle('checked', newState);
-      recalcProgress();
-      if (item.freq === 'weekly') {
-        var count = weeklyCount(item.id, currentDate);
-        var goal = item.weeklyGoal || 1;
-        badge.textContent = item.weeklyGoal
-          ? count + '/' + goal + ' this week'
-          : (count > 0 ? '\u2713 this week' : 'this week');
-        badge.className = 'weekly-badge' + (count >= goal ? ' complete' : '');
-      }
+      var freshDay = Disciplines.forDate(currentDate, loadPrefs(), loadData());
+      applyDayProgress(freshDay);
+      if (!badge) return;
+      var fresh = findInDay(freshDay, item.id);
+      if (!fresh || !fresh.weekly) return;
+      badge.textContent = fresh.weekly.text;
+      badge.className = 'weekly-badge' + (fresh.weekly.complete ? ' complete' : '');
     });
 
     var textDiv = el('div', { className: 'item-text' });
     textDiv.appendChild(el('span', { className: 'item-label', textContent: item.label }));
 
-    var hintText = item.hint || defaultItemHint(item);
-    if (hintText) {
-      textDiv.appendChild(el('span', { className: 'item-hint', textContent: hintText }));
+    if (item.hint) {
+      textDiv.appendChild(el('span', { className: 'item-hint', textContent: item.hint }));
     }
 
     if (item.id === 'prayer-readings') {
@@ -582,20 +467,15 @@
       textDiv.appendChild(link);
     }
 
-    if (item.freq === 'weekly') {
-      var count = weeklyCount(item.id, currentDate);
-      var goal = item.weeklyGoal || 1;
-      var badgeText = item.weeklyGoal
-        ? count + '/' + goal + ' this week'
-        : (count > 0 ? '\u2713 this week' : 'this week');
-      var badge = el('span', {
-        className: 'weekly-badge' + (count >= goal ? ' complete' : ''),
-        textContent: badgeText
+    if (item.weekly) {
+      badge = el('span', {
+        className: 'weekly-badge' + (item.weekly.complete ? ' complete' : ''),
+        textContent: item.weekly.text
       });
       textDiv.appendChild(badge);
     }
 
-    if (item.expandable && item.details) {
+    if (item.details) {
       var detailsDiv = el('div', { className: 'item-details', hidden: true });
       for (var i = 0; i < item.details.length; i++) {
         detailsDiv.appendChild(el('p', {
@@ -636,32 +516,20 @@
     text.textContent = checked + ' / ' + total + ' disciplines';
   }
 
-  function defaultItemHint(item) {
-    switch (item.freq) {
-      case 'weekly':
-        return item.weeklyGoal ? item.weeklyGoal + ' times this week' : 'Weekly discipline';
-      case 'sunday':
-        return 'Sunday discipline';
-      case 'fasting':
-        return 'Friday fast';
-      case 'abstinence':
-        return 'Friday abstinence';
-      default:
-        return '';
+  function findInDay(day, itemId) {
+    for (var c = 0; c < day.categories.length; c++) {
+      var items = day.categories[c].items;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].id === itemId) return items[i];
+      }
     }
+    return null;
   }
 
-  function recalcProgress() {
-    var boxes = document.querySelectorAll('#checklist input[type="checkbox"]');
-    var total = boxes.length;
-    var checked = 0;
-    for (var i = 0; i < boxes.length; i++) {
-      if (boxes[i].checked) checked++;
-    }
-    updateProgress(checked, total);
-
+  function applyDayProgress(day) {
+    updateProgress(day.checked, day.total);
     var allDone = document.querySelector('.all-done');
-    if (checked === total && total > 0) {
+    if (day.checked === day.total && day.total > 0) {
       if (!allDone) {
         document.getElementById('checklist').appendChild(
           el('div', { className: 'all-done', textContent: 'All disciplines kept today. Well done.' })
@@ -1087,10 +955,10 @@
         : 'Done customizing';
     });
 
-    var prefs = loadPrefs();
+    var catalog = Disciplines.catalog(loadPrefs());
 
-    for (var c = 0; c < CATEGORIES.length; c++) {
-      var cat = CATEGORIES[c];
+    for (var c = 0; c < catalog.categories.length; c++) {
+      var cat = catalog.categories[c];
       var catSection = el('div', { className: 'settings-category' });
       catSection.appendChild(el('div', { className: 'settings-category-header' }, [
         el('span', { textContent: cat.icon + ' ' }),
@@ -1099,11 +967,10 @@
 
       for (var j = 0; j < cat.items.length; j++) {
         var item = cat.items[j];
-        var enabled = prefs.hasOwnProperty(item.id) ? prefs[item.id] : !item.optional;
 
         var row = el('label', { className: 'settings-item' });
         var toggle = el('input', { type: 'checkbox' });
-        toggle.checked = enabled;
+        toggle.checked = item.enabled;
 
         (function (itemId) {
           toggle.addEventListener('change', function () {
@@ -1242,35 +1109,23 @@
     var prefs = (pair.prefs && typeof pair.prefs === 'object') ? pair.prefs : {};
     var dateStr = pair.today.date_str;
     var anchorItems = (pair.today.items && typeof pair.today.items === 'object') ? pair.today.items : {};
-
-    var totalItems = 0;
-    var checkedItems = 0;
+    var checks = {};
+    checks[dateStr] = anchorItems;
+    var day = Disciplines.forDate(dateStr, prefs, checks);
     var categoryNodes = [];
 
-    for (var c = 0; c < CATEGORIES.length; c++) {
-      var cat = CATEGORIES[c];
-      var visible = [];
-      for (var j = 0; j < cat.items.length; j++) {
-        var item = cat.items[j];
-        if (!isItemEnabledFor(prefs, item)) continue;
-        if (!Cal.applies(item.freq, dateStr)) continue;
-        visible.push(item);
-      }
-      if (visible.length === 0) continue;
-
+    for (var c = 0; c < day.categories.length; c++) {
+      var cat = day.categories[c];
       var catSection = el('div', { className: 'anchor-category' });
       catSection.appendChild(el('div', { className: 'anchor-category-header' }, [
         el('span', { className: 'anchor-category-icon', textContent: cat.icon }),
         el('span', { className: 'anchor-category-name', textContent: cat.name })
       ]));
 
-      for (var k = 0; k < visible.length; k++) {
-        var it = visible[k];
-        var checked = !!anchorItems[it.id];
-        if (checked) checkedItems++;
-        totalItems++;
-        var row = el('div', { className: 'anchor-item' + (checked ? ' checked' : '') }, [
-          el('span', { className: 'anchor-check', textContent: checked ? '✓' : '·' }),
+      for (var k = 0; k < cat.items.length; k++) {
+        var it = cat.items[k];
+        var row = el('div', { className: 'anchor-item' + (it.checked ? ' checked' : '') }, [
+          el('span', { className: 'anchor-check', textContent: it.checked ? '✓' : '·' }),
           el('span', { className: 'anchor-item-label', textContent: it.label })
         ]);
         catSection.appendChild(row);
@@ -1280,14 +1135,14 @@
 
     var header = el('div', { className: 'anchor-card-header' }, [
       el('strong', { className: 'anchor-username', textContent: pair.username }),
-      el('span', { className: 'anchor-card-meta', textContent: checkedItems + ' / ' + totalItems + ' today' })
+      el('span', { className: 'anchor-card-meta', textContent: day.checked + ' / ' + day.total + ' today' })
     ]);
     card.appendChild(header);
 
     var subHeader = el('div', { className: 'anchor-card-subheader', textContent: formatDate(dateStr) });
     card.appendChild(subHeader);
 
-    if (totalItems === 0) {
+    if (day.total === 0) {
       card.appendChild(el('p', { className: 'anchors-empty', textContent: 'No disciplines configured for today.' }));
     } else {
       for (var n = 0; n < categoryNodes.length; n++) {
