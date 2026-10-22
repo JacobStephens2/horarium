@@ -3,21 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const vm = require('vm');
 const { createDeviceRows } = require('./device-rows');
-
-function memoryStorage(initial) {
-  const items = new Map(initial || []);
-  return {
-    getItem(key) {
-      return items.has(key) ? items.get(key) : null;
-    },
-    setItem(key, value) {
-      items.set(String(key), String(value));
-    },
-    removeItem(key) {
-      items.delete(key);
-    }
-  };
-}
+const { memoryStorage } = require('./memory-storage');
 
 function todayStr() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
@@ -258,9 +244,12 @@ function fireChange(input) {
   for (let i = 0; i < fns.length; i++) fns[i].call(input);
 }
 
-async function signIn(document, email, password) {
+async function signIn(document, email, password, submitText) {
   const toggle = button(document, 'Sign in to sync across devices');
   if (toggle) toggle.click();
+  if (submitText === 'Create account') {
+    button(document, 'Don\u2019t have an account? Register').click();
+  }
   const account = document.getElementById('account-section');
   const inputs = document.walk().filter(function (el) {
     return el.tagName === 'INPUT' && el.parentNode && accountContains(account, el);
@@ -271,7 +260,7 @@ async function signIn(document, email, password) {
   const passwordInput = inputs.find(function (el) { return el.getAttribute('type') === 'password'; });
   emailInput.value = email;
   passwordInput.value = password;
-  const submit = button(document, 'Sign in') || button(document, 'Create account');
+  const submit = button(document, submitText || 'Sign in');
   submit.click();
   await flush();
 }
@@ -345,12 +334,7 @@ describe('account rows on the page', function () {
     assert.equal(rows.read(null).notes[today], 'local note');
 
     const mark = requests.length;
-    button(document, 'Sign in to sync across devices').click();
-    const inputs = document.walk().filter(function (el) { return el.tagName === 'INPUT'; });
-    inputs.find(function (el) { return el.getAttribute('type') === 'email'; }).value = 'bea@example.com';
-    inputs.find(function (el) { return el.getAttribute('type') === 'password'; }).value = 'secret-password';
-    button(document, 'Sign in').click();
-    await flush();
+    await signIn(document, 'bea@example.com', 'secret-password');
 
     assert.equal(noteValue(document), '');
     assert.equal(rows.read('ada@example.com').notes[today], 'private note');
@@ -412,18 +396,7 @@ describe('account rows on the page', function () {
     button(document, 'Sign out').click();
 
     const mark = requests.length;
-    button(document, 'Sign in to sync across devices').click();
-    button(document, 'Don\u2019t have an account? Register').click();
-    const account = document.getElementById('account-section');
-    const inputs = document.walk().filter(function (el) {
-      return el.tagName === 'INPUT' && accountContains(account, el);
-    });
-    inputs.find(function (el) {
-      return el.getAttribute('type') === 'email' && el.getAttribute('placeholder') === 'Email address';
-    }).value = 'cy@example.com';
-    inputs.find(function (el) { return el.getAttribute('type') === 'password'; }).value = 'secret-password';
-    button(document, 'Create account').click();
-    await flush();
+    await signIn(document, 'cy@example.com', 'secret-password', 'Create account');
 
     const register = requests.slice(mark).find(function (req) {
       return req.url.indexOf('register.php') !== -1;

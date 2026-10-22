@@ -1,21 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { createDeviceRows } = require('./device-rows');
-
-function memoryStorage() {
-  const items = new Map();
-  return {
-    getItem(key) {
-      return items.has(key) ? items.get(key) : null;
-    },
-    setItem(key, value) {
-      items.set(String(key), String(value));
-    },
-    removeItem(key) {
-      items.delete(key);
-    }
-  };
-}
+const { memoryStorage } = require('./memory-storage');
 
 describe('device rows', function () {
   it('stores a signed-in account apart from unbound rows and finds that account again', function () {
