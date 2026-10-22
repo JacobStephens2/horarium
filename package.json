@@ -5,6 +5,7 @@
   "private": true,
   "description": "Capacitor Android wrapper for Horarium — Rule of Life Tracker",
   "scripts": {
+    "test": "node --test",
     "build:www": "node scripts/build-www.js",
     "sync": "npm run build:www && cap sync android",
     "build:android": "npm run sync && (cd android && ./gradlew assembleRelease bundleRelease)"

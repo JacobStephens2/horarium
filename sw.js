@@ -1,8 +1,9 @@
-var CACHE_NAME = 'horarium-v1';
+var CACHE_NAME = 'horarium-v2';
 var ASSETS = [
   './',
   './index.html',
   './style.css',
+  './device-rows.js',
   './app.js',
   './manifest.json',
   './favicon_io/favicon.ico',
