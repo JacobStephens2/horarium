@@ -167,7 +167,7 @@ function loadPage(storage, requests, routes) {
       }
     };
   }
-  function deliver(result) {
+  function crossResponseIntoPage(result) {
     return Promise.resolve(result).then(responseForPage);
   }
   const context = {
@@ -202,24 +202,24 @@ function loadPage(storage, requests, routes) {
       requests.push(request);
       if (routes && routes.before) {
         const custom = routes.before(request);
-        if (custom) return deliver(custom);
+        if (custom) return crossResponseIntoPage(custom);
       }
       if (String(url).indexOf('login.php') !== -1 || String(url).indexOf('register.php') !== -1) {
-        return deliver(jsonResponse({
+        return crossResponseIntoPage(jsonResponse({
           token: 'token-for-' + (body && body.username),
           username: body && body.username
         }));
       }
       if (String(url).indexOf('data.php') !== -1 && method === 'GET') {
-        return deliver(jsonResponse({ data: [] }));
+        return crossResponseIntoPage(jsonResponse({ data: [] }));
       }
       if (String(url).indexOf('prefs.php') !== -1 && method === 'GET') {
-        return deliver(jsonResponse({ prefs: {}, updated_at: 0 }));
+        return crossResponseIntoPage(jsonResponse({ prefs: {}, updated_at: 0 }));
       }
       if (String(url).indexOf('anchors.php') !== -1) {
-        return deliver(jsonResponse({ incoming: [], outgoing: [], pairs: [] }));
+        return crossResponseIntoPage(jsonResponse({ incoming: [], outgoing: [], pairs: [] }));
       }
-      return deliver(jsonResponse({ ok: true }));
+      return crossResponseIntoPage(jsonResponse({ ok: true }));
     }
   };
   context.window = context;
