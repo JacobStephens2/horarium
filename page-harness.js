@@ -120,18 +120,24 @@ function createDocument() {
     return [];
   };
 
-  const ids = [
-    'checklist', 'current-date', 'lent-day', 'today-btn', 'prev-day', 'next-day',
-    'today-indicator', 'progress-fill', 'progress-text', 'settings-section',
-    'anchors-section', 'account-section'
-  ];
-  for (let i = 0; i < ids.length; i++) {
-    const el = makeElement('div');
-    el.id = ids[i];
+  document.walk = function () { return walk(document.body, []); };
+  mountShell(document);
+  return document;
+}
+
+const PAGE_IDS = [
+  'checklist', 'current-date', 'lent-day', 'today-btn', 'prev-day', 'next-day',
+  'today-indicator', 'progress-fill', 'progress-text', 'settings-section',
+  'anchors-section', 'account-section'
+];
+
+function mountShell(document) {
+  document.body.children.length = 0;
+  for (let i = 0; i < PAGE_IDS.length; i++) {
+    const el = document.createElement('div');
+    el.id = PAGE_IDS[i];
     document.body.appendChild(el);
   }
-  document.walk = function () { return walk(document.body, []); };
-  return document;
 }
 
 function jsonResponse(body, status) {
@@ -143,6 +149,12 @@ function jsonResponse(body, status) {
 
 function loadPage(storage, requests, routes) {
   const document = createDocument();
+  let windowListeners = {};
+  const location = {
+    search: '',
+    pathname: '/',
+    reload() { mount(); }
+  };
   const context = {
     console,
     setTimeout,
@@ -173,7 +185,7 @@ function loadPage(storage, requests, routes) {
       }
     },
     history: { replaceState() {} },
-    location: { search: '', pathname: '/', reload() {} },
+    location,
     confirm() { return true; },
     fetch(url, options) {
       const method = (options && options.method) || 'GET';
@@ -213,9 +225,29 @@ function loadPage(storage, requests, routes) {
   };
   context.window = context;
   context.globalThis = context;
+  document.defaultView = context;
+  context.addEventListener = function (type, fn) {
+    if (!windowListeners[type]) windowListeners[type] = [];
+    windowListeners[type].push(fn);
+  };
+  context.removeEventListener = function (type, fn) {
+    const list = windowListeners[type] || [];
+    windowListeners[type] = list.filter(function (item) { return item !== fn; });
+  };
+  context.dispatchEvent = function (event) {
+    const list = (windowListeners[event.type] || []).slice();
+    for (let i = 0; i < list.length; i++) list[i].call(context, event);
+  };
+  const deviceRowsSource = fs.readFileSync(require.resolve('./device-rows.js'), 'utf8');
+  const appSource = fs.readFileSync(require.resolve('./app.js'), 'utf8');
+  function mount() {
+    mountShell(document);
+    windowListeners = {};
+    vm.runInContext(deviceRowsSource, context, { filename: 'device-rows.js' });
+    vm.runInContext(appSource, context, { filename: 'app.js' });
+  }
   vm.createContext(context);
-  vm.runInContext(fs.readFileSync(require.resolve('./device-rows.js'), 'utf8'), context, { filename: 'device-rows.js' });
-  vm.runInContext(fs.readFileSync(require.resolve('./app.js'), 'utf8'), context, { filename: 'app.js' });
+  mount();
   return document;
 }
 

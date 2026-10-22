@@ -383,6 +383,16 @@
     saveNoteFor(pending.owner, pending.dateStr, pending.text());
   }
 
+  // Discard the debounced note without writing it. flushPendingNote is the
+  // path that still saves, including after a same-document sign-out.
+  function dropPendingNote() {
+    if (pendingNoteTimer) {
+      clearTimeout(pendingNoteTimer);
+      pendingNoteTimer = null;
+    }
+    pendingNote = null;
+  }
+
   function queueNoteSave(owner, dateStr, text) {
     pendingNote = { owner: owner, dateStr: dateStr, text: text };
     if (pendingNoteTimer) clearTimeout(pendingNoteTimer);
@@ -645,8 +655,10 @@
       placeholder: 'Add a note about your day\u2026'
     });
     textarea.value = getNote(currentDate);
+    var renderedAccount = getUsername();
     textarea.addEventListener('input', function () {
-      var owner = getUsername();
+      if (getUsername() !== renderedAccount) return;
+      var owner = renderedAccount;
       var dateStr = currentDate;
       var field = textarea;
       queueNoteSave(owner, dateStr, function () { return field.value; });
@@ -659,10 +671,12 @@
 
   function buildItemRow(item, checked) {
     var row = el('label', { className: 'item' + (checked ? ' checked' : '') });
+    var renderedAccount = getUsername();
 
     var cb = el('input', { type: 'checkbox' });
     cb.checked = checked;
     cb.addEventListener('change', function () {
+      if (getUsername() !== renderedAccount) return;
       var newState = toggleItem(currentDate, item.id);
       row.classList.toggle('checked', newState);
       recalcProgress();
@@ -1191,6 +1205,7 @@
   function renderSettingsUI() {
     var container = document.getElementById('settings-section');
     container.innerHTML = '';
+    var renderedAccount = getUsername();
 
     var toggleLink = el('button', {
       className: 'settings-toggle',
@@ -1226,6 +1241,7 @@
 
         (function (itemId) {
           toggle.addEventListener('change', function () {
+            if (getUsername() !== renderedAccount) return;
             var p = loadPrefs();
             p[itemId] = this.checked;
             setPrefsAndSync(p);
@@ -1558,6 +1574,14 @@
   document.getElementById('today-btn').addEventListener('click', function () {
     currentDate = clampToSeason(todayStr());
     render();
+  });
+
+  // A storage event is another document. This page still shows the account
+  // it rendered, so drop a note that has not been saved and rebuild.
+  window.addEventListener('storage', function (event) {
+    if (!event || (event.key !== TOKEN_KEY && event.key !== USERNAME_KEY)) return;
+    dropPendingNote();
+    location.reload();
   });
 
   // ========== SERVICE WORKER ==========
