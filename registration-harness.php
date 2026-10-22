@@ -39,7 +39,11 @@ foreach ($payload['steps'] as $step) {
         fwrite(STDERR, "unknown step\n");
         exit(1);
     }
-    $results[] = createAccount($db, $step['input'] ?? []);
+    try {
+        $results[] = createAccount($db, $step['input'] ?? []);
+    } catch (Throwable $e) {
+        $results[] = ['code' => 500, 'body' => ['error' => $e->getMessage()]];
+    }
 }
 
 $accounts = [];

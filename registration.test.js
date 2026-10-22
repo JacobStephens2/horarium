@@ -128,6 +128,24 @@ describe('account creation migration', function () {
     assert.equal(created.accounts[0].prefs_updated_at, 40);
   });
 
+  it('does not store an account when checklist is not a date map', function () {
+    const created = createAccounts([
+      {
+        op: 'create',
+        input: {
+          username: 'eve@example.com',
+          password: 'secret1',
+          checklist: 'nope',
+          notes: {}
+        }
+      }
+    ]);
+
+    assert.notEqual(created.results[0].code, 200);
+    assert.equal(created.results[0].body.token, undefined);
+    assert.deepEqual(created.accounts, []);
+  });
+
   it('creates an account when checklist and notes name no dates', function () {
     const created = createAccounts([
       {

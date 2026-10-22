@@ -12,7 +12,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $input = jsonInput();
-$refusal = accountCreationRefusal($input);
+$fields = registrationFields($input);
+$refusal = accountCreationRefusal($fields);
 if ($refusal !== null) {
     jsonResponse($refusal['body'], $refusal['code']);
 }
