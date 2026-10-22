@@ -353,18 +353,23 @@
       .catch(function () { return null; });
   }
 
+  function postDatedRow(body) {
+    if (!isLoggedIn()) return;
+    apiRequest('data.php', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  }
+
   function syncDateToServer(dateStr, updatedAt) {
     if (!isLoggedIn()) return;
     var data = loadData();
     var notes = loadNotes();
-    apiRequest('data.php', {
-      method: 'POST',
-      body: JSON.stringify({
-        date_str: dateStr,
-        items: data[dateStr] || {},
-        note: notes[dateStr] || '',
-        updated_at: updatedAt
-      })
+    postDatedRow({
+      date_str: dateStr,
+      items: data[dateStr] || {},
+      note: notes[dateStr] || '',
+      updated_at: updatedAt
     });
   }
 
@@ -387,24 +392,21 @@
         if (getUsername() !== account) return;
         if (!result) return;
         var stored = deviceRows.read(account);
-        var localPrefs = stored.disciplineSettings;
-        var localUpdated = stored.disciplineSettingsUpdatedAt;
-        var serverUpdated = typeof result.updated_at === 'number' ? result.updated_at : 0;
-        var serverPrefs = (result.prefs && typeof result.prefs === 'object') ? result.prefs : {};
-
-        if (!localUpdated && Object.keys(localPrefs).length > 0 && !serverUpdated) {
-          localUpdated = Date.now();
-          savePrefsFor(account, localPrefs, localUpdated);
+        var merged = HorariumAccountRowMerge.mergeDisciplineSettings(
+          stored.disciplineSettings,
+          stored.disciplineSettingsUpdatedAt,
+          result,
+          Date.now()
+        );
+        if (merged.write) {
+          savePrefsFor(account, merged.disciplineSettings, merged.disciplineSettingsUpdatedAt);
         }
-
-        if (serverUpdated > localUpdated) {
-          savePrefsFor(account, serverPrefs, serverUpdated);
-          if (getUsername() === account) {
-            render();
-            renderSettingsUI();
-          }
-        } else if (localUpdated > serverUpdated && getUsername() === account) {
-          syncPrefsToServer(localUpdated);
+        if (merged.push && getUsername() === account) {
+          syncPrefsToServer(merged.disciplineSettingsUpdatedAt);
+        }
+        if (merged.write && !merged.push && getUsername() === account) {
+          render();
+          renderSettingsUI();
         }
       });
   }
@@ -417,54 +419,18 @@
         if (getUsername() !== account) return;
         if (!result || !result.data) return;
         var stored = deviceRows.read(account);
-        var localData = stored.checklist;
-        var localNotes = stored.notes;
-        var localTs = stored.timestamps;
-        var serverRows = result.data;
-        var pushDates = [];
-
-        for (var i = 0; i < serverRows.length; i++) {
-          var row = serverRows[i];
-          var ds = row.date_str;
-          var serverUpdated = row.updated_at;
-          var localUpdated = localTs[ds] || 0;
-
-          if (serverUpdated > localUpdated) {
-            if (row.items && typeof row.items === 'object' && Object.keys(row.items).length > 0) {
-              localData[ds] = row.items;
-            } else {
-              delete localData[ds];
-            }
-            if (row.note) {
-              localNotes[ds] = row.note;
-            } else {
-              delete localNotes[ds];
-            }
-            localTs[ds] = serverUpdated;
-          } else if (localUpdated > serverUpdated) {
-            pushDates.push(ds);
-          }
-        }
-
-        var serverDateSet = {};
-        for (var j = 0; j < serverRows.length; j++) {
-          serverDateSet[serverRows[j].date_str] = true;
-        }
-        var allLocalDates = Object.keys(localTs);
-        for (var k = 0; k < allLocalDates.length; k++) {
-          if (!serverDateSet[allLocalDates[k]]) {
-            pushDates.push(allLocalDates[k]);
-          }
-        }
-
+        var merged = HorariumAccountRowMerge.mergeDates({
+          checklist: stored.checklist,
+          notes: stored.notes,
+          timestamps: stored.timestamps
+        }, result.data);
         deviceRows.write(account, {
-          checklist: localData,
-          notes: localNotes,
-          timestamps: localTs
+          checklist: merged.checklist,
+          notes: merged.notes,
+          timestamps: merged.timestamps
         });
-
-        for (var p = 0; p < pushDates.length; p++) {
-          syncDateToServer(pushDates[p], localTs[pushDates[p]]);
+        for (var p = 0; p < merged.push.length; p++) {
+          postDatedRow(merged.push[p]);
         }
       })
       .then(function () {
@@ -809,17 +775,23 @@
           // The signed-out form can still name another account. Create
           // account sends the unbound rows, and that account's rows stay out.
           flushPendingNote();
-          var unbound = deviceRows.read(null);
-          var prefs = unbound.disciplineSettings;
-          var prefsUpdatedAt = unbound.disciplineSettingsUpdatedAt;
-          if (Object.keys(prefs).length > 0 && !prefsUpdatedAt) {
-            prefsUpdatedAt = Date.now();
-            savePrefsFor(null, prefs, prefsUpdatedAt);
+          var stamped = HorariumAccountRowMerge.stampMissingClocks(
+            deviceRows.read(null),
+            Date.now()
+          );
+          deviceRows.write(null, stamped);
+          body.checklist = stamped.checklist;
+          body.notes = stamped.notes;
+          body.timestamps = [];
+          var stampDates = Object.keys(stamped.timestamps);
+          for (var s = 0; s < stampDates.length; s++) {
+            body.timestamps.push({
+              date_str: stampDates[s],
+              updated_at: stamped.timestamps[stampDates[s]]
+            });
           }
-          body.checklist = unbound.checklist;
-          body.notes = unbound.notes;
-          body.prefs = prefs;
-          body.prefs_updated_at = prefsUpdatedAt;
+          body.prefs = stamped.disciplineSettings;
+          body.prefs_updated_at = stamped.disciplineSettingsUpdatedAt;
         }
 
         fetch(API_BASE + '/' + endpoint, {
@@ -842,19 +814,6 @@
             // The unbound rows now belong to this account. A later create
             // must not send them again.
             claimUnboundRows(result.username);
-            var ts = loadTimestamps();
-            var now = Date.now();
-            var data = loadData();
-            var notes = loadNotes();
-            var prefs = loadPrefs();
-            var allDates = Object.keys(data).concat(Object.keys(notes));
-            for (var i = 0; i < allDates.length; i++) {
-              if (!ts[allDates[i]]) ts[allDates[i]] = now;
-            }
-            saveTimestamps(ts);
-            if (Object.keys(prefs).length > 0 && !loadPrefsUpdatedAt()) {
-              savePrefsUpdatedAt(now);
-            }
           }
 
           renderAll();

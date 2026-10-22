@@ -15,9 +15,33 @@ function registrationFields(array $input): array
         'password' => $input['password'] ?? '',
         'checklist' => $input['checklist'] ?? [],
         'notes' => $input['notes'] ?? [],
+        'timestamps' => $input['timestamps'] ?? null,
         'prefs' => $input['prefs'] ?? new stdClass(),
         'prefs_updated_at' => (int) ($input['prefs_updated_at'] ?? 0),
     ];
+}
+
+// A JSON object is an associative array, so only a list carries device clocks.
+function deviceClocksByDate($timestamps): array
+{
+    if (!is_array($timestamps) || !array_is_list($timestamps)) {
+        return [];
+    }
+
+    $clocks = [];
+    foreach ($timestamps as $entry) {
+        if (!is_array($entry)) {
+            continue;
+        }
+        $dateStr = $entry['date_str'] ?? null;
+        if (!is_string($dateStr)) {
+            continue;
+        }
+        $clock = (int) ($entry['updated_at'] ?? 0);
+        $clocks[$dateStr] = $clock > 0 ? $clock : 0;
+    }
+
+    return $clocks;
 }
 
 function accountCreationRefusal(array $fields): ?array
@@ -69,6 +93,7 @@ function createAccount(PDO $db, array $input): array
     $notes = $fields['notes'];
     $prefs = $fields['prefs'];
     $prefsUpdatedAt = $fields['prefs_updated_at'];
+    $clocks = deviceClocksByDate($fields['timestamps']);
     $allDates = migrationDateNames($checklist, $notes);
 
     if (count($allDates) > 0) {
@@ -79,7 +104,9 @@ function createAccount(PDO $db, array $input): array
             if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateStr)) continue;
             $items = isset($checklist[$dateStr]) ? json_encode($checklist[$dateStr]) : '{}';
             $note = $notes[$dateStr] ?? '';
-            $stmt->execute([$userId, $dateStr, $items, $note, $now]);
+            $deviceClock = $clocks[$dateStr] ?? 0;
+            $updatedAt = $deviceClock > 0 ? $deviceClock : $now;
+            $stmt->execute([$userId, $dateStr, $items, $note, $updatedAt]);
         }
     }
 

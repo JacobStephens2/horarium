@@ -1,10 +1,11 @@
-var CACHE_NAME = 'horarium-v3';
+var CACHE_NAME = 'horarium-v4';
 var ASSETS = [
   './',
   './index.html',
   './style.css',
   './device-rows.js',
   './calendar.js',
+  './account-row-merge.js',
   './app.js',
   './manifest.json',
   './favicon_io/favicon.ico',
