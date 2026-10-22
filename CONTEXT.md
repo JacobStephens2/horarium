@@ -22,6 +22,8 @@ The header shows the Season as "Season - Day N of M".
 
 **Abstinence day** - Ash Wednesday, or any Friday in Lent or the Triduum. Items with the `abstinence` Frequency show only on Abstinence days.
 
+**Discipline** - A practice in the rule of life. It has a Frequency. Discipline settings record whether it is on for an account. A date shows the disciplines that are on and whose Frequency applies on that date. It is not part of the Liturgical calendar.
+
 **Frequency** - An item's `freq`, which decides the dates the item shows on:
 
 - `daily` - every day
