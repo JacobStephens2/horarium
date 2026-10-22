@@ -166,4 +166,80 @@ describe('account isolation after async work', function () {
     assert.equal(rows.read('ada@example.com').notes[today], 'private note revised');
     assert.equal(rows.read(null).notes[today], 'local note');
   });
+
+  it('a stale unauthorized reply does not sign out the account that just signed in', async function () {
+    const today = todayStr();
+    const storage = memoryStorage();
+    const rows = createDeviceRows(storage);
+    rows.assignExistingRows(null);
+    rows.write('ada@example.com', {
+      notes: { [today]: 'ada note' },
+      timestamps: { [today]: 1000 }
+    });
+    rows.write('bea@example.com', {
+      notes: { [today]: 'bea local' },
+      timestamps: { [today]: 1000 }
+    });
+    storage.setItem('horarium-token', 'token-ada');
+    storage.setItem('horarium-username', 'ada@example.com');
+    let releaseAda;
+    let releaseBea;
+    const adaGate = new Promise(function (resolve) { releaseAda = resolve; });
+    const beaGate = new Promise(function (resolve) { releaseBea = resolve; });
+    const document = loadPage(storage, function (url, options) {
+      const method = (options && options.method) || 'GET';
+      let body = null;
+      if (options && options.body) {
+        try { body = JSON.parse(options.body); } catch (e) { body = options.body; }
+      }
+      const headers = (options && options.headers) || {};
+      const authorization = headers.Authorization || headers.authorization || null;
+      if (String(url).indexOf('data.php') !== -1 && method === 'GET' && authorization === 'Bearer token-ada') {
+        return adaGate.then(function () {
+          return jsonResponse({ error: 'Unauthorized' }, 401);
+        });
+      }
+      if (String(url).indexOf('data.php') !== -1 && method === 'GET' && authorization === 'Bearer token-for-bea@example.com') {
+        return beaGate.then(function () {
+          return jsonResponse({
+            data: [{
+              date_str: today,
+              items: { 'prayer-holyhour': true },
+              note: 'from bea server',
+              updated_at: 9000
+            }]
+          });
+        });
+      }
+      if (String(url).indexOf('login.php') !== -1) {
+        return Promise.resolve(jsonResponse({
+          token: 'token-for-' + (body && body.username),
+          username: body && body.username
+        }));
+      }
+      if (String(url).indexOf('prefs.php') !== -1) {
+        return Promise.resolve(jsonResponse({ prefs: {}, updated_at: 0 }));
+      }
+      if (String(url).indexOf('anchors.php') !== -1) {
+        return Promise.resolve(jsonResponse({ incoming: [], outgoing: [], pairs: [] }));
+      }
+      return Promise.resolve(jsonResponse({ ok: true }));
+    });
+    await flush();
+    button(document, 'Sign out').click();
+    button(document, 'Sign in to sync across devices').click();
+    const inputs = document.walk().filter(function (el) { return el.tagName === 'INPUT'; });
+    inputs.find(function (el) { return el.getAttribute('type') === 'email'; }).value = 'bea@example.com';
+    inputs.find(function (el) { return el.getAttribute('type') === 'password'; }).value = 'secret-password';
+    button(document, 'Sign in').click();
+    await flush();
+    assert.equal(storage.getItem('horarium-token'), 'token-for-bea@example.com');
+    releaseAda();
+    await flush();
+    releaseBea();
+    await flush();
+    assert.equal(storage.getItem('horarium-token'), 'token-for-bea@example.com');
+    assert.equal(rows.read('bea@example.com').notes[today], 'from bea server');
+    assert.equal(rows.read('ada@example.com').notes[today], 'ada note');
+  });
 });

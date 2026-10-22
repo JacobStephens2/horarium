@@ -305,6 +305,17 @@
     deviceRows.write(getUsername(), { timestamps: ts });
   }
 
+  function claimUnboundRows(account) {
+    deviceRows.write(account, deviceRows.read(null));
+    deviceRows.write(null, {
+      checklist: {},
+      notes: {},
+      timestamps: {},
+      disciplineSettings: {},
+      disciplineSettingsUpdatedAt: 0
+    });
+  }
+
   function touchTimestamp(dateStr) {
     var ts = loadTimestamps();
     ts[dateStr] = Date.now();
@@ -347,6 +358,29 @@
     saveNoteFor(getUsername(), dateStr, text);
   }
 
+  // The notes field waits 400ms. Create account reads storage immediately, so
+  // it flushes this first. `text` is read at flush time from the field that
+  // was edited, which may already have been replaced by a later render.
+  var pendingNote = null;
+  var pendingNoteTimer = null;
+
+  function flushPendingNote() {
+    if (pendingNoteTimer) {
+      clearTimeout(pendingNoteTimer);
+      pendingNoteTimer = null;
+    }
+    if (!pendingNote) return;
+    var pending = pendingNote;
+    pendingNote = null;
+    saveNoteFor(pending.owner, pending.dateStr, pending.text());
+  }
+
+  function queueNoteSave(owner, dateStr, text) {
+    pendingNote = { owner: owner, dateStr: dateStr, text: text };
+    if (pendingNoteTimer) clearTimeout(pendingNoteTimer);
+    pendingNoteTimer = setTimeout(flushPendingNote, 400);
+  }
+
   // `account` is whoever owned the field when the edit was made. A debounced
   // save can fire after sign-out, and it must not land on the unbound rows.
   function saveNoteFor(account, dateStr, text) {
@@ -377,8 +411,12 @@
     return fetch(API_BASE + '/' + endpoint, opts)
       .then(function (r) {
         if (r.status === 401) {
-          clearAuth();
-          renderAll();
+          // A late 401 for a token this session already replaced must not
+          // sign out the account that is signed in now.
+          if (getToken() === token) {
+            clearAuth();
+            renderAll();
+          }
           return null;
         }
         return r.json();
@@ -607,14 +645,11 @@
       placeholder: 'Add a note about your day\u2026'
     });
     textarea.value = getNote(currentDate);
-    var debounceTimer;
     textarea.addEventListener('input', function () {
-      clearTimeout(debounceTimer);
       var owner = getUsername();
       var dateStr = currentDate;
-      debounceTimer = setTimeout(function () {
-        saveNoteFor(owner, dateStr, textarea.value);
-      }, 400);
+      var field = textarea;
+      queueNoteSave(owner, dateStr, function () { return field.value; });
     });
     notesSection.appendChild(notesLabel);
     notesSection.appendChild(textarea);
@@ -852,6 +887,7 @@
         if (isRegister) {
           // The signed-out form can still name another account. Create
           // account sends the unbound rows, and that account's rows stay out.
+          flushPendingNote();
           var unbound = deviceRows.read(null);
           var prefs = unbound.disciplineSettings;
           var prefsUpdatedAt = unbound.disciplineSettingsUpdatedAt;
@@ -885,9 +921,9 @@
           setAuth(result.token, result.username);
 
           if (isRegister) {
-            // The account was just created from the unbound rows. Keep a
-            // copy on that account so sign-in shows them even before sync.
-            deviceRows.write(result.username, deviceRows.read(null));
+            // The unbound rows now belong to this account. A later create
+            // must not send them again.
+            claimUnboundRows(result.username);
             var ts = loadTimestamps();
             var now = Date.now();
             var data = loadData();

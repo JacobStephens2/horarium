@@ -418,8 +418,8 @@ describe('account rows on the page', function () {
     assert.equal(rows.read('ada@example.com').disciplineSettingsUpdatedAt, 90);
     assert.equal(rows.read('cy@example.com').notes[today], 'local note');
     assert.equal(rows.read('cy@example.com').disciplineSettings['asceticism-alcohol'], false);
-    assert.equal(rows.read(null).notes[today], 'local note');
-    assert.equal(rows.read(null).disciplineSettings['asceticism-alcohol'], false);
+    assert.equal(rows.read(null).notes[today], undefined);
+    assert.equal(rows.read(null).disciplineSettings['asceticism-alcohol'], undefined);
   });
 
   it('registers unbound checklist, notes, and discipline settings when another account is still named', async function () {
@@ -476,9 +476,9 @@ describe('account rows on the page', function () {
     assert.deepEqual(rows.read('cy@example.com').notes, { [today]: 'local note' });
     assert.deepEqual(rows.read('cy@example.com').disciplineSettings, { 'asceticism-alcohol': false });
     assert.equal(rows.read('cy@example.com').disciplineSettingsUpdatedAt, 40);
-    assert.equal(rows.read(null).notes[today], 'local note');
-    assert.equal(rows.read(null).checklist[today]['prayer-holyhour'], true);
-    assert.equal(rows.read(null).disciplineSettings['asceticism-alcohol'], false);
+    assert.equal(rows.read(null).notes[today], undefined);
+    assert.equal(rows.read(null).checklist[today], undefined);
+    assert.equal(rows.read(null).disciplineSettings['asceticism-alcohol'], undefined);
 
     const leaked = requests.slice(mark).filter(function (req) {
       const body = JSON.stringify(req.body || {});
@@ -521,7 +521,7 @@ describe('account rows on the page', function () {
     assert.deepEqual(register.body.prefs, { 'asceticism-alcohol': false });
     assert.equal(JSON.stringify(register.body).indexOf('private note'), -1);
     assert.equal(JSON.stringify(register.body).indexOf('asceticism-soda'), -1);
-    assert.equal(rows.read(null).disciplineSettingsUpdatedAt, stamped);
+    assert.equal(rows.read(null).disciplineSettingsUpdatedAt, 0);
     assert.equal(rows.read('cy@example.com').disciplineSettingsUpdatedAt, stamped);
     assert.equal(rows.read('ada@example.com').disciplineSettingsUpdatedAt, 0);
     assert.deepEqual(rows.read('ada@example.com').disciplineSettings, { 'asceticism-soda': false });
@@ -834,5 +834,62 @@ describe('account rows on the page', function () {
     assert.equal(rows.read('bea@example.com').disciplineSettingsUpdatedAt, 8000);
     assert.deepEqual(rows.read(null).disciplineSettings, { 'stewardship-exercise': false });
     assert.equal(rows.read(null).disciplineSettingsUpdatedAt, 1000);
+  });
+
+  it('gives the unbound rows to the new account and leaves them out of the next create', async function () {
+    const today = todayStr();
+    const storage = memoryStorage();
+    const rows = createDeviceRows(storage);
+    rows.assignExistingRows(null);
+    rows.write(null, {
+      checklist: { [today]: { 'prayer-holyhour': true } },
+      notes: { [today]: 'local note' },
+      timestamps: { [today]: 40 },
+      disciplineSettings: { 'asceticism-alcohol': false },
+      disciplineSettingsUpdatedAt: 40
+    });
+    const requests = [];
+    const document = loadPage(storage, requests);
+    await flush();
+    await signIn(document, 'cy@example.com', 'secret-password', 'Create account');
+
+    assert.equal(rows.read('cy@example.com').notes[today], 'local note');
+    assert.equal(rows.read('cy@example.com').checklist[today]['prayer-holyhour'], true);
+    assert.equal(rows.read('cy@example.com').disciplineSettings['asceticism-alcohol'], false);
+    assert.equal(rows.read(null).notes[today], undefined);
+    assert.equal(rows.read(null).checklist[today], undefined);
+    assert.equal(rows.read(null).disciplineSettings['asceticism-alcohol'], undefined);
+
+    button(document, 'Sign out').click();
+    const mark = requests.length;
+    await signIn(document, 'dee@example.com', 'secret-password', 'Create account');
+    const second = requests.slice(mark).find(function (req) {
+      return req.url.indexOf('register.php') !== -1;
+    });
+    assert.equal(second.body.notes[today], undefined);
+    assert.equal(second.body.checklist[today], undefined);
+    assert.equal(rows.read('cy@example.com').notes[today], 'local note');
+  });
+
+  it('sends a note still in the signed-out field when creating an account', async function () {
+    const today = todayStr();
+    const storage = memoryStorage();
+    const rows = createDeviceRows(storage);
+    rows.assignExistingRows(null);
+    rows.write(null, { notes: { [today]: 'saved note' } });
+    const requests = [];
+    const document = loadPage(storage, requests);
+    await flush();
+    const notes = document.getElementById('daily-notes');
+    notes.value = 'typed but not flushed';
+    (notes.listeners.input || []).forEach(function (fn) { fn(); });
+    await signIn(document, 'cy@example.com', 'secret-password', 'Create account');
+
+    const register = requests.find(function (req) {
+      return req.url.indexOf('register.php') !== -1;
+    });
+    assert.equal(register.body.notes[today], 'typed but not flushed');
+    await new Promise(function (resolve) { setTimeout(resolve, 500); });
+    assert.equal(rows.read('cy@example.com').notes[today], 'typed but not flushed');
   });
 });
