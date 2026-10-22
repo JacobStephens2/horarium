@@ -1,25 +1,17 @@
 (function () {
   'use strict';
 
-  var STORAGE_KEY = 'horarium-data';
-  var NOTES_KEY = 'horarium-notes';
-  var TIMESTAMPS_KEY = 'horarium-timestamps';
   var TOKEN_KEY = 'horarium-token';
   var USERNAME_KEY = 'horarium-username';
-  var PREFS_KEY = 'horarium-prefs';
-  var PREFS_UPDATED_KEY = 'horarium-prefs-updated-at';
   var API_BASE = './api';
+  var deviceRows = HorariumDeviceRows.createDeviceRows(localStorage);
 
-  // One-time migration from pre-rename (Exodus 40 Lite) localStorage keys
-  (function migrateStorageKeys() {
+  // Session keys only. Checklist rows, notes, timestamps, and discipline
+  // settings move in device-rows.js, including the pre-rename copies.
+  (function migrateSessionKeys() {
     var legacy = [
-      ['exodus40lite-data', STORAGE_KEY],
-      ['exodus40lite-notes', NOTES_KEY],
-      ['exodus40lite-timestamps', TIMESTAMPS_KEY],
       ['exodus40lite-token', TOKEN_KEY],
-      ['exodus40lite-username', USERNAME_KEY],
-      ['exodus40lite-prefs', PREFS_KEY],
-      ['exodus40lite-prefs-updated-at', PREFS_UPDATED_KEY]
+      ['exodus40lite-username', USERNAME_KEY]
     ];
     for (var i = 0; i < legacy.length; i++) {
       var oldKey = legacy[i][0];
@@ -199,23 +191,25 @@
   // ========== PREFERENCES ==========
 
   function loadPrefs() {
-    try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; }
-    catch (e) { return {}; }
+    return deviceRows.read(getUsername()).disciplineSettings;
   }
 
   function loadPrefsUpdatedAt() {
-    return parseInt(localStorage.getItem(PREFS_UPDATED_KEY) || '0', 10) || 0;
+    return deviceRows.read(getUsername()).disciplineSettingsUpdatedAt;
   }
 
   function savePrefsUpdatedAt(updatedAt) {
-    localStorage.setItem(PREFS_UPDATED_KEY, String(updatedAt || 0));
+    deviceRows.write(getUsername(), { disciplineSettingsUpdatedAt: updatedAt || 0 });
+  }
+
+  function savePrefsFor(account, prefs, updatedAt) {
+    var patch = { disciplineSettings: prefs };
+    if (typeof updatedAt === 'number') patch.disciplineSettingsUpdatedAt = updatedAt;
+    deviceRows.write(account, patch);
   }
 
   function savePrefs(prefs, updatedAt) {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
-    if (typeof updatedAt === 'number') {
-      savePrefsUpdatedAt(updatedAt);
-    }
+    savePrefsFor(getUsername(), prefs, updatedAt);
   }
 
   function setPrefsAndSync(prefs) {
@@ -278,36 +272,63 @@
     localStorage.removeItem(USERNAME_KEY);
   }
 
+  function renderAll() {
+    render();
+    renderSettingsUI();
+    renderAccountUI();
+    renderAnchorsUI();
+  }
+
+  // Rows already on the device belong to the signed-in account, if there is
+  // one. Later calls leave each owner's rows where the first run put them.
+  deviceRows.assignExistingRows(getUsername());
+
   // ========== LOCALSTORAGE ==========
 
   function loadData() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
-    catch (e) { return {}; }
+    return deviceRows.read(getUsername()).checklist;
   }
 
   function saveData(data) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    deviceRows.write(getUsername(), { checklist: data });
   }
 
   function loadNotes() {
-    try { return JSON.parse(localStorage.getItem(NOTES_KEY)) || {}; }
-    catch (e) { return {}; }
+    return deviceRows.read(getUsername()).notes;
+  }
+
+  function saveNotes(notes) {
+    deviceRows.write(getUsername(), { notes: notes });
   }
 
   function loadTimestamps() {
-    try { return JSON.parse(localStorage.getItem(TIMESTAMPS_KEY)) || {}; }
-    catch (e) { return {}; }
+    return deviceRows.read(getUsername()).timestamps;
   }
 
   function saveTimestamps(ts) {
-    localStorage.setItem(TIMESTAMPS_KEY, JSON.stringify(ts));
+    deviceRows.write(getUsername(), { timestamps: ts });
+  }
+
+  function claimUnboundRows(account) {
+    deviceRows.write(account, deviceRows.read(null));
+    deviceRows.write(null, {
+      checklist: {},
+      notes: {},
+      timestamps: {},
+      disciplineSettings: {},
+      disciplineSettingsUpdatedAt: 0
+    });
+  }
+
+  function touchTimestampFor(account, dateStr) {
+    var ts = deviceRows.read(account).timestamps;
+    ts[dateStr] = Date.now();
+    deviceRows.write(account, { timestamps: ts });
+    return ts[dateStr];
   }
 
   function touchTimestamp(dateStr) {
-    var ts = loadTimestamps();
-    ts[dateStr] = Date.now();
-    saveTimestamps(ts);
-    return ts[dateStr];
+    return touchTimestampFor(getUsername(), dateStr);
   }
 
   function isChecked(dateStr, itemId) {
@@ -342,15 +363,44 @@
   }
 
   function saveNote(dateStr, text) {
-    var notes = loadNotes();
+    saveNoteFor(getUsername(), dateStr, text);
+  }
+
+  // The notes field waits 400ms. Create account reads storage immediately, so
+  // it flushes this first. `text` is read at flush time from the field that
+  // was edited, which may already have been replaced by a later render.
+  var pendingNote = null;
+  var pendingNoteTimer = null;
+
+  function flushPendingNote() {
+    if (pendingNoteTimer) {
+      clearTimeout(pendingNoteTimer);
+      pendingNoteTimer = null;
+    }
+    if (!pendingNote) return;
+    var pending = pendingNote;
+    pendingNote = null;
+    saveNoteFor(pending.owner, pending.dateStr, pending.text());
+  }
+
+  function queueNoteSave(owner, dateStr, text) {
+    pendingNote = { owner: owner, dateStr: dateStr, text: text };
+    if (pendingNoteTimer) clearTimeout(pendingNoteTimer);
+    pendingNoteTimer = setTimeout(flushPendingNote, 400);
+  }
+
+  // `account` is whoever owned the field when the edit was made. A debounced
+  // save can fire after sign-out, and it must not land on the unbound rows.
+  function saveNoteFor(account, dateStr, text) {
+    var notes = deviceRows.read(account).notes;
     if (text) {
       notes[dateStr] = text;
     } else {
       delete notes[dateStr];
     }
-    localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
-    var updatedAt = touchTimestamp(dateStr);
-    syncDateToServer(dateStr, updatedAt);
+    deviceRows.write(account, { notes: notes });
+    var updatedAt = touchTimestampFor(account, dateStr);
+    if (getUsername() === account) syncDateToServer(dateStr, updatedAt);
   }
 
   // ========== SERVER SYNC ==========
@@ -367,8 +417,12 @@
     return fetch(API_BASE + '/' + endpoint, opts)
       .then(function (r) {
         if (r.status === 401) {
-          clearAuth();
-          renderAccountUI();
+          // A late 401 for a token this session already replaced must not
+          // sign out the account that is signed in now.
+          if (getToken() === token) {
+            clearAuth();
+            renderAll();
+          }
           return null;
         }
         return r.json();
@@ -404,24 +458,29 @@
 
   function syncPrefsFromServer() {
     if (!isLoggedIn()) return Promise.resolve();
+    var account = getUsername();
     return apiRequest('prefs.php', { method: 'GET' })
       .then(function (result) {
+        if (getUsername() !== account) return;
         if (!result) return;
-        var localPrefs = loadPrefs();
-        var localUpdated = loadPrefsUpdatedAt();
+        var stored = deviceRows.read(account);
+        var localPrefs = stored.disciplineSettings;
+        var localUpdated = stored.disciplineSettingsUpdatedAt;
         var serverUpdated = typeof result.updated_at === 'number' ? result.updated_at : 0;
         var serverPrefs = (result.prefs && typeof result.prefs === 'object') ? result.prefs : {};
 
         if (!localUpdated && Object.keys(localPrefs).length > 0 && !serverUpdated) {
           localUpdated = Date.now();
-          savePrefs(localPrefs, localUpdated);
+          savePrefsFor(account, localPrefs, localUpdated);
         }
 
         if (serverUpdated > localUpdated) {
-          savePrefs(serverPrefs, serverUpdated);
-          render();
-          renderSettingsUI();
-        } else if (localUpdated > serverUpdated) {
+          savePrefsFor(account, serverPrefs, serverUpdated);
+          if (getUsername() === account) {
+            render();
+            renderSettingsUI();
+          }
+        } else if (localUpdated > serverUpdated && getUsername() === account) {
           syncPrefsToServer(localUpdated);
         }
       });
@@ -429,12 +488,15 @@
 
   function syncFromServer() {
     if (!isLoggedIn()) return Promise.resolve();
+    var account = getUsername();
     return apiRequest('data.php', { method: 'GET' })
       .then(function (result) {
+        if (getUsername() !== account) return;
         if (!result || !result.data) return;
-        var localData = loadData();
-        var localNotes = loadNotes();
-        var localTs = loadTimestamps();
+        var stored = deviceRows.read(account);
+        var localData = stored.checklist;
+        var localNotes = stored.notes;
+        var localTs = stored.timestamps;
         var serverRows = result.data;
         var pushDates = [];
 
@@ -472,9 +534,11 @@
           }
         }
 
-        saveData(localData);
-        localStorage.setItem(NOTES_KEY, JSON.stringify(localNotes));
-        saveTimestamps(localTs);
+        deviceRows.write(account, {
+          checklist: localData,
+          notes: localNotes,
+          timestamps: localTs
+        });
 
         for (var p = 0; p < pushDates.length; p++) {
           syncDateToServer(pushDates[p], localTs[pushDates[p]]);
@@ -581,12 +645,11 @@
       placeholder: 'Add a note about your day\u2026'
     });
     textarea.value = getNote(currentDate);
-    var debounceTimer;
     textarea.addEventListener('input', function () {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(function () {
-        saveNote(currentDate, textarea.value);
-      }, 400);
+      var owner = getUsername();
+      var dateStr = currentDate;
+      var field = textarea;
+      queueNoteSave(owner, dateStr, function () { return field.value; });
     });
     notesSection.appendChild(notesLabel);
     notesSection.appendChild(textarea);
@@ -741,8 +804,7 @@
       signOutBtn.addEventListener('click', function () {
         apiRequest('logout.php', { method: 'POST' });
         clearAuth();
-        renderAccountUI();
-        renderAnchorsUI();
+        renderAll();
       });
       container.appendChild(info);
       container.appendChild(signOutBtn);
@@ -823,14 +885,18 @@
         var body = { username: username, password: password };
 
         if (isRegister) {
-          var prefs = loadPrefs();
-          var prefsUpdatedAt = loadPrefsUpdatedAt();
+          // The signed-out form can still name another account. Create
+          // account sends the unbound rows, and that account's rows stay out.
+          flushPendingNote();
+          var unbound = deviceRows.read(null);
+          var prefs = unbound.disciplineSettings;
+          var prefsUpdatedAt = unbound.disciplineSettingsUpdatedAt;
           if (Object.keys(prefs).length > 0 && !prefsUpdatedAt) {
             prefsUpdatedAt = Date.now();
-            savePrefs(prefs, prefsUpdatedAt);
+            savePrefsFor(null, prefs, prefsUpdatedAt);
           }
-          body.checklist = loadData();
-          body.notes = loadNotes();
+          body.checklist = unbound.checklist;
+          body.notes = unbound.notes;
           body.prefs = prefs;
           body.prefs_updated_at = prefsUpdatedAt;
         }
@@ -852,6 +918,9 @@
           setAuth(result.token, result.username);
 
           if (isRegister) {
+            // The unbound rows now belong to this account. A later create
+            // must not send them again.
+            claimUnboundRows(result.username);
             var ts = loadTimestamps();
             var now = Date.now();
             var data = loadData();
@@ -867,10 +936,9 @@
             }
           }
 
+          renderAll();
           syncFromServer().then(function () {
-            render();
-            renderAccountUI();
-            renderAnchorsUI();
+            renderAll();
           });
         })
         .catch(function () {

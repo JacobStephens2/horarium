@@ -35,7 +35,7 @@ rmrf(OUT);
 fs.mkdirSync(OUT, { recursive: true });
 
 // Top-level files
-for (const file of ['index.html', 'app.js', 'style.css', 'manifest.json']) {
+for (const file of ['index.html', 'device-rows.js', 'app.js', 'style.css', 'manifest.json']) {
   fs.copyFileSync(path.join(ROOT, file), path.join(OUT, file));
 }
 
