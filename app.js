@@ -80,6 +80,62 @@
     syncPrefsToServer(updatedAt);
   }
 
+  // ========== APPEARANCE ==========
+
+  // A device display preference, not account data: it never syncs and needs
+  // no signed-in account. 'system' (the default) follows the OS setting.
+  var THEME_KEY = 'horarium-theme';
+  var THEME_META_COLORS = { light: '#2D1B4E', dark: '#17121F' };
+
+  function loadTheme() {
+    var stored = localStorage.getItem(THEME_KEY);
+    return stored === 'light' || stored === 'dark' ? stored : 'system';
+  }
+
+  function osPrefersDark() {
+    return typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  function resolveTheme(theme) {
+    if (theme === 'light' || theme === 'dark') return theme;
+    return osPrefersDark() ? 'dark' : 'light';
+  }
+
+  function applyTheme() {
+    var resolved = resolveTheme(loadTheme());
+    var root = document.documentElement;
+    if (root) {
+      root.setAttribute('data-theme', resolved);
+      // The inline head script may have set this first; keep it in sync.
+      if (root.style) root.style.colorScheme = resolved;
+    }
+    var meta = document.querySelector
+      ? document.querySelector('meta[name="theme-color"]')
+      : null;
+    if (meta) meta.setAttribute('content', THEME_META_COLORS[resolved]);
+  }
+
+  function setTheme(theme) {
+    if (theme === 'system') localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, theme);
+    applyTheme();
+  }
+
+  // Resolve before first paint; the inline script in index.html mirrors this
+  // so the correct theme is already on <html> while CSS loads.
+  applyTheme();
+
+  (function watchOsTheme() {
+    if (typeof window.matchMedia !== 'function') return;
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    var onChange = function () {
+      if (loadTheme() === 'system') applyTheme();
+    };
+    if (typeof mq.addEventListener === 'function') mq.addEventListener('change', onChange);
+    else if (typeof mq.addListener === 'function') mq.addListener(onChange);
+  })();
+
   // ========== AUTH ==========
 
   function getToken() { return localStorage.getItem(TOKEN_KEY); }
@@ -936,10 +992,53 @@
 
   // ========== SETTINGS UI ==========
 
+  function renderAppearanceUI(container) {
+    var current = loadTheme();
+    var row = el('div', { className: 'appearance-row' });
+    row.appendChild(el('span', { className: 'appearance-label', textContent: 'Appearance' }));
+
+    var group = el('div', { className: 'appearance-options' });
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', 'Appearance');
+    var buttons = [];
+    var choices = [
+      ['system', 'System'],
+      ['light', 'Light'],
+      ['dark', 'Dark']
+    ];
+
+    for (var i = 0; i < choices.length; i++) {
+      (function (choice, label) {
+        var btn = el('button', {
+          className: 'appearance-option',
+          textContent: label,
+          type: 'button'
+        });
+        btn.setAttribute('aria-pressed', choice === current ? 'true' : 'false');
+        btn.addEventListener('click', function () {
+          setTheme(choice);
+          for (var b = 0; b < buttons.length; b++) {
+            buttons[b].setAttribute(
+              'aria-pressed',
+              buttons[b] === btn ? 'true' : 'false'
+            );
+          }
+        });
+        buttons.push(btn);
+        group.appendChild(btn);
+      })(choices[i][0], choices[i][1]);
+    }
+
+    row.appendChild(group);
+    container.appendChild(row);
+  }
+
   function renderSettingsUI() {
     var container = document.getElementById('settings-section');
     container.innerHTML = '';
     var renderedAccount = getUsername();
+
+    renderAppearanceUI(container);
 
     var toggleLink = el('button', {
       className: 'settings-toggle',
