@@ -94,6 +94,7 @@ function createDocument() {
 
   const document = {
     body: makeElement('body'),
+    documentElement: makeElement('html'),
     createElement: makeElement,
     createTextNode(text) {
       return { tagName: '#text', textContent: String(text), children: [] };
@@ -147,6 +148,43 @@ function jsonResponse(body, status) {
   };
 }
 
+function makeMatchMedia(initialDark) {
+  let dark = !!(initialDark);
+  const listeners = [];
+  function matchMedia(query) {
+    const q = String(query);
+    const mq = {
+      media: q,
+      addEventListener(type, fn) {
+        if (type === 'change') listeners.push({ fn, mq });
+      },
+      removeEventListener(type, fn) {
+        for (let i = listeners.length - 1; i >= 0; i--) {
+          if (listeners[i].fn === fn) listeners.splice(i, 1);
+        }
+      },
+      addListener(fn) { listeners.push({ fn, mq }); },
+      removeListener(fn) {
+        for (let i = listeners.length - 1; i >= 0; i--) {
+          if (listeners[i].fn === fn) listeners.splice(i, 1);
+        }
+      }
+    };
+    Object.defineProperty(mq, 'matches', {
+      get() { return q.indexOf('prefers-color-scheme: dark') !== -1 ? dark : false; }
+    });
+    return mq;
+  }
+  matchMedia.__setOsDark = function (value) {
+    dark = !!value;
+    const pending = listeners.slice();
+    for (let i = 0; i < pending.length; i++) {
+      pending[i].fn.call(pending[i].mq, { matches: dark, media: 'prefers-color-scheme: dark' });
+    }
+  };
+  return matchMedia;
+}
+
 function loadPage(storage, requests, routes) {
   const document = createDocument();
   let windowListeners = {};
@@ -170,12 +208,15 @@ function loadPage(storage, requests, routes) {
   function crossResponseIntoPage(result) {
     return Promise.resolve(result).then(responseForPage);
   }
+  const matchMedia = makeMatchMedia(routes && routes.osDark);
+  document.__setOsDark = matchMedia.__setOsDark;
   const context = {
     console,
     setTimeout,
     clearTimeout,
     URLSearchParams,
     localStorage: storage,
+    matchMedia,
     document,
     navigator: {
       serviceWorker: {
