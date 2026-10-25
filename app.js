@@ -3,15 +3,19 @@
 
   var TOKEN_KEY = 'horarium-token';
   var USERNAME_KEY = 'horarium-username';
+  var LEGACY_TOKEN_KEY = 'exodus40lite-token';
+  var LEGACY_USERNAME_KEY = 'exodus40lite-username';
   var API_BASE = './api';
   var deviceRows = HorariumDeviceRows.createDeviceRows(localStorage);
 
   // Session keys only. Checklist rows, notes, timestamps, and discipline
   // settings move in device-rows.js, including the pre-rename copies.
+  // Always drop the pre-rename token and username. Leaving them would
+  // restore a session after the current keys are cleared.
   (function migrateSessionKeys() {
     var legacy = [
-      ['exodus40lite-token', TOKEN_KEY],
-      ['exodus40lite-username', USERNAME_KEY]
+      [LEGACY_TOKEN_KEY, TOKEN_KEY],
+      [LEGACY_USERNAME_KEY, USERNAME_KEY]
     ];
     for (var i = 0; i < legacy.length; i++) {
       var oldKey = legacy[i][0];
@@ -20,6 +24,7 @@
         var val = localStorage.getItem(oldKey);
         if (val !== null) localStorage.setItem(newKey, val);
       }
+      localStorage.removeItem(oldKey);
     }
   })();
 
@@ -140,7 +145,7 @@
 
   function getToken() { return localStorage.getItem(TOKEN_KEY); }
   function getUsername() { return localStorage.getItem(USERNAME_KEY); }
-  function isLoggedIn() { return !!getToken(); }
+  function isLoggedIn() { return !!(getToken() && getUsername()); }
   function accountIsSession(account) { return getUsername() === account; }
 
   function setAuth(token, username) {
@@ -151,6 +156,8 @@
   function clearAuth() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USERNAME_KEY);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    localStorage.removeItem(LEGACY_USERNAME_KEY);
   }
 
   function renderAll() {
