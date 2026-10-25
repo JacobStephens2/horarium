@@ -660,4 +660,125 @@ describe('account rows on the page', function () {
     await new Promise(function (resolve) { setTimeout(resolve, 500); });
     assert.equal(rows.read('cy@example.com').notes[today], 'typed but not flushed');
   });
+
+  it('keeps a pre-rename session on the current keys and deletes the pre-rename token and username', async function () {
+    const storage = memoryStorage();
+    storage.setItem('exodus40lite-token', 'legacy-token');
+    storage.setItem('exodus40lite-username', 'ada@example.com');
+
+    const document = loadPage(storage, []);
+    await flush();
+
+    assert.equal(storage.getItem('horarium-token'), 'legacy-token');
+    assert.equal(storage.getItem('horarium-username'), 'ada@example.com');
+    assert.equal(storage.getItem('exodus40lite-token'), null);
+    assert.equal(storage.getItem('exodus40lite-username'), null);
+    const signedIn = document.walk().find(function (el) {
+      return el.tagName === 'STRONG' && el.textContent === 'ada@example.com';
+    });
+    assert.ok(signedIn, 'signed in as the migrated account');
+  });
+
+  it('deletes a pre-rename token and username without replacing the current session', async function () {
+    const storage = memoryStorage();
+    storage.setItem('horarium-token', 'token-ada');
+    storage.setItem('horarium-username', 'ada@example.com');
+    storage.setItem('exodus40lite-token', 'legacy-token');
+    storage.setItem('exodus40lite-username', 'bea@example.com');
+
+    const document = loadPage(storage, []);
+    await flush();
+
+    assert.equal(storage.getItem('horarium-token'), 'token-ada');
+    assert.equal(storage.getItem('horarium-username'), 'ada@example.com');
+    assert.equal(storage.getItem('exodus40lite-token'), null);
+    assert.equal(storage.getItem('exodus40lite-username'), null);
+    const signedIn = document.walk().find(function (el) {
+      return el.tagName === 'STRONG' && el.textContent === 'ada@example.com';
+    });
+    assert.ok(signedIn, 'still signed in as the current account');
+    assert.equal(button(document, 'Sign out') !== undefined, true);
+  });
+
+  it('signing out deletes the pre-rename token and username as well as the current session', async function () {
+    const storage = memoryStorage();
+    storage.setItem('horarium-token', 'token-ada');
+    storage.setItem('horarium-username', 'ada@example.com');
+
+    const document = loadPage(storage, []);
+    await flush();
+    storage.setItem('exodus40lite-token', 'legacy-token');
+    storage.setItem('exodus40lite-username', 'ada@example.com');
+
+    button(document, 'Sign out').click();
+
+    assert.equal(storage.getItem('horarium-token'), null);
+    assert.equal(storage.getItem('horarium-username'), null);
+    assert.equal(storage.getItem('exodus40lite-token'), null);
+    assert.equal(storage.getItem('exodus40lite-username'), null);
+    assert.equal(button(document, 'Sign out'), undefined);
+  });
+
+  it('does not write server rows onto unbound rows when a token has no username', async function () {
+    const today = todayStr();
+    const storage = memoryStorage();
+    const rows = createDeviceRows(storage);
+    rows.assignExistingRows(null);
+    rows.write(null, {
+      checklist: { [today]: { 'almsgiving-alms': true } },
+      notes: { [today]: 'local note' },
+      timestamps: { [today]: 1000 },
+      disciplineSettings: { 'stewardship-exercise': false },
+      disciplineSettingsUpdatedAt: 1000
+    });
+    storage.setItem('horarium-token', 'token-ada');
+
+    const requests = [];
+    const document = loadPage(storage, requests, {
+      before(request) {
+        if (request.url.indexOf('data.php') !== -1 && request.method === 'GET') {
+          return Promise.resolve(jsonResponse({
+            data: [
+              {
+                date_str: today,
+                items: { 'prayer-holyhour': true },
+                note: 'server note',
+                updated_at: 9000
+              },
+              {
+                date_str: '2026-03-01',
+                items: { 'prayer-readings': true },
+                note: 'server only',
+                updated_at: 9000
+              }
+            ]
+          }));
+        }
+        if (request.url.indexOf('prefs.php') !== -1 && request.method === 'GET') {
+          return Promise.resolve(jsonResponse({
+            prefs: { 'asceticism-alcohol': false },
+            updated_at: 9000
+          }));
+        }
+      }
+    });
+    await flush();
+
+    assert.equal(noteValue(document), 'local note');
+    assert.equal(checklistBox(document, 'Give alms').checked, true);
+    assert.deepEqual(rows.read(null), {
+      checklist: { [today]: { 'almsgiving-alms': true } },
+      notes: { [today]: 'local note' },
+      timestamps: { [today]: 1000 },
+      disciplineSettings: { 'stewardship-exercise': false },
+      disciplineSettingsUpdatedAt: 1000
+    });
+    assert.equal(button(document, 'Sign out'), undefined);
+    assert.ok(button(document, 'Sign in to sync across devices'));
+    const syncWrites = requests.filter(function (req) {
+      return req.method === 'POST' &&
+        (req.url.indexOf('data.php') !== -1 || req.url.indexOf('prefs.php') !== -1);
+    });
+    assert.deepEqual(syncWrites, []);
+  });
 });
