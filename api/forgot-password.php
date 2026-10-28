@@ -1,31 +1,17 @@
 <?php
-require __DIR__ . '/config.php';
-require __DIR__ . '/../vendor/autoload.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\SMTP;
 
-cors();
+function sendPasswordResetMail(PDO $db, string $requestedUsername, string $origin, callable $openMailer): void
+{
+    $stmt = $db->prepare('SELECT id, username FROM users WHERE username = ?');
+    $stmt->execute([$requestedUsername]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    jsonResponse(['error' => 'Method not allowed'], 405);
-}
+    if (!$user) {
+        return;
+    }
 
-$input = jsonInput();
-$username = trim($input['username'] ?? '');
-
-if (!filter_var($username, FILTER_VALIDATE_EMAIL)) {
-    jsonResponse(['error' => 'Please enter a valid email address.'], 400);
-}
-
-$db = getDB();
-
-// Always return success to avoid leaking whether an account exists
-$stmt = $db->prepare('SELECT id FROM users WHERE username = ?');
-$stmt->execute([$username]);
-$user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-if ($user) {
     // Delete any existing reset tokens for this user
     $db->prepare('DELETE FROM password_resets WHERE user_id = ?')->execute([(int) $user['id']]);
 
@@ -36,21 +22,12 @@ if ($user) {
         'INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, ?)'
     )->execute([$token, (int) $user['id'], $expires]);
 
-    $resetUrl = CANONICAL_ORIGIN . '/?reset=' . $token;
+    $resetUrl = $origin . '/?reset=' . $token;
 
-    // Send email via SMTP
-    $mail = new PHPMailer(true);
+    $mail = null;
     try {
-        $mail->isSMTP();
-        $mail->Host       = SMTP_HOST;
-        $mail->SMTPAuth   = true;
-        $mail->Username   = SMTP_USER;
-        $mail->Password   = SMTP_PASS;
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = SMTP_PORT;
-
-        $mail->setFrom(SMTP_FROM_EMAIL, SMTP_FROM_NAME);
-        $mail->addAddress($username);
+        $mail = $openMailer();
+        $mail->addAddress($user['username']);
 
         $mail->isHTML(true);
         $mail->Subject = 'Horarium - Password Reset';
@@ -67,8 +44,43 @@ if ($user) {
 
         $mail->send();
     } catch (\Exception $e) {
-        error_log('Password reset email failed: ' . $mail->ErrorInfo);
+        $detail = is_object($mail) ? $mail->ErrorInfo : $e->getMessage();
+        error_log('Password reset email failed: ' . $detail);
     }
 }
 
-jsonResponse(['ok' => true]);
+if (PHP_SAPI !== 'cli' || (isset($_SERVER['argv'][0]) && realpath($_SERVER['argv'][0]) === realpath(__FILE__))) {
+    require __DIR__ . '/config.php';
+    require __DIR__ . '/../vendor/autoload.php';
+
+    cors();
+
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        jsonResponse(['error' => 'Method not allowed'], 405);
+    }
+
+    $input = jsonInput();
+    $username = trim($input['username'] ?? '');
+
+    if (!filter_var($username, FILTER_VALIDATE_EMAIL)) {
+        jsonResponse(['error' => 'Please enter a valid email address.'], 400);
+    }
+
+    $db = getDB();
+
+    sendPasswordResetMail($db, $username, CANONICAL_ORIGIN, function () {
+        $mail = new PHPMailer(true);
+        $mail->isSMTP();
+        $mail->Host       = SMTP_HOST;
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USER;
+        $mail->Password   = SMTP_PASS;
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = SMTP_PORT;
+        $mail->setFrom(SMTP_FROM_EMAIL, SMTP_FROM_NAME);
+        return $mail;
+    });
+
+    // Always return success to avoid leaking whether an account exists
+    jsonResponse(['ok' => true]);
+}
