@@ -1,8 +1,6 @@
 <?php
-require __DIR__ . '/api/forgot-password.php';
+require __DIR__ . '/api/password-reset-mail.php';
 
-// Stands in for MySQL's case-insensitive username comparison. Not the
-// production username column: account creation and that column stay as they are.
 class RecordingMailer
 {
     public $recipients = [];
@@ -37,6 +35,8 @@ if (!is_array($payload) || !isset($payload['stored_username'], $payload['request
 $db = new PDO('sqlite::memory:', null, null, [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
 ]);
+// COLLATE NOCASE stands in for MySQL's case-insensitive username comparison.
+// Not the production username column: account creation and that column stay as they are.
 $db->exec('CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE COLLATE NOCASE,
